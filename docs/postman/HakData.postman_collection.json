@@ -1,0 +1,1358 @@
+{
+  "info": {
+    "_postman_id": "bd0d9520-d14f-564b-83b5-d65b07f57895",
+    "name": "Hak Data API",
+    "description": "Koleksi lengkap API Hak Data (GraphQL lewat proxy web /api + REST unggah bukti + health).\n\nJalankan berurutan (Collection Runner atau `newman run docs/postman/HakData.postman_collection.json -e docs/postman/HakData.local.postman_environment.json --working-dir .`).\nPrasyarat: `docker compose up --build` (atau `pnpm dev` + Mailpit). Setiap request punya test otomatis.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Kesehatan",
+      "description": "",
+      "item": [
+        {
+          "name": "GET /health (langsung ke API)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"API sehat (DB + RabbitMQ up)\", () => { if (b.status !== \"ok\") throw new Error(JSON.stringify(b)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiUrl}}/health",
+              "host": ["{{apiUrl}}"],
+              "path": ["health"]
+            },
+            "description": "200 bila DB dan RabbitMQ sehat, 503 bila salah satu mati. Tanpa detail error (endpoint publik)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Autentikasi",
+      "description": "Daftar → verifikasi email (token diambil dari Mailpit) → masuk. Sesi = cookie httpOnly; Postman/Newman menyimpannya otomatis per domain.",
+      "item": [
+        {
+          "name": "Daftar akun baru",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"newEmail\", `postman.${Date.now()}@hakdata.test`);",
+                  "pm.collectionVariables.set(\"newPassword\", \"PostmanPass!2026\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($e:String!,$p:String!,$n:String!){ register(email:$e,password:$p,name:$n){ id email } }",
+                "variables": "{\n  \"e\": \"{{newEmail}}\",\n  \"p\": \"{{newPassword}}\",\n  \"n\": \"Pengguna Postman\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": "Tidak membuat sesi. Email yang sudah terdaftar mendapat respons yang sama (tidak membocorkan keberadaan akun)."
+          }
+        },
+        {
+          "name": "Verifikasi email (token dari Mailpit)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const to = pm.collectionVariables.get(\"newEmail\");",
+                  "pm.sendRequest(pm.environment.get(\"mailpitUrl\") + \"/api/v1/search?query=\" + encodeURIComponent(\"to:\" + to), (e, list) => {",
+                  "  if (e || !list.json().messages.length) throw new Error(\"email verifikasi belum sampai di Mailpit\");",
+                  "  pm.sendRequest(pm.environment.get(\"mailpitUrl\") + \"/api/v1/message/\" + list.json().messages[0].ID, (e2, msg) => {",
+                  "    const m = msg.json().Text.match(/token=([^\\s&]+)/);",
+                  "    pm.collectionVariables.set(\"verifyToken\", decodeURIComponent(m[1]));",
+                  "  });",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });",
+                  "pm.test(\"terverifikasi\", () => { if (b.data.verifyEmail !== true) throw new Error(); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($t:String!){ verifyEmail(token:$t) }",
+                "variables": "{\n  \"t\": \"{{verifyToken}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": "Pre-request mengambil tautan verifikasi dari API Mailpit (SMTP tangkap-semua dev)."
+          }
+        },
+        {
+          "name": "Masuk (akun baru)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($e:String!,$p:String!){ login(email:$e,password:$p){ id email role } }",
+                "variables": "{\n  \"e\": \"{{newEmail}}\",\n  \"p\": \"{{newPassword}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": "Mengatur cookie hd_session (15 menit) dan hd_refresh (7 hari), httpOnly + SameSite=Lax."
+          }
+        },
+        {
+          "name": "Siapa saya",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });",
+                  "pm.test(\"sesi aktif\", () => { if (!b.data.me) throw new Error(\"me null\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ me { id email name role } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Perbarui sesi (refresh)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation{ refresh { id } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Data publik",
+      "description": "Tanpa login: hak subjek data, aturan tenggat berversi, direktori perusahaan, statistik agregat.",
+      "item": [
+        {
+          "name": "Daftar hak (UU 27/2022)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ rights { code title article plainMeaning fields { key label required } } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Aturan tenggat yang berlaku",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ legalRules { ruleKey version rightCode durationHours status legalBasis sourceRef } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": "Hanya aturan VERIFIED dengan durasi angka yang menghasilkan hitung mundur."
+          }
+        },
+        {
+          "name": "Cari perusahaan (cursor pagination)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });",
+                  "",
+                  "const n = b.data.companiesConnection.edges[0].node;",
+                  "pm.collectionVariables.set(\"companyId\", n.id);",
+                  "pm.collectionVariables.set(\"companySlug\", n.slug);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query($s:String){ companiesConnection(search:$s, first:5){ edges{ cursor node{ id slug name channels{ id type value status } } } pageInfo{ endCursor hasNextPage } } }",
+                "variables": "{\n  \"s\": \"toko\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Detail perusahaan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query($s:String!){ company(slug:$s){ id name website channels{ type value status sourceUrl } } }",
+                "variables": "{\n  \"s\": \"{{companySlug}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Statistik perusahaan (k-anonymity)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query($s:String!){ companyStats(slug:$s){ sufficient minSample requestsRecorded responsesRecorded responseRatio medianResponseHours method label isDemoData } }",
+                "variables": "{\n  \"s\": \"{{companySlug}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": "Di bawah ambang pengguna berbeda, semua angka null. Hanya pengiriman lewat email platform yang dihitung."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Permintaan: alur lengkap",
+      "description": "DRAFT → REVIEWED → SENT (email ke kanal privasi) → tenggat dihitung → bukti → respons → dossier → selesai.",
+      "item": [
+        {
+          "name": "Buat permintaan (hak akses)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });",
+                  "pm.collectionVariables.set(\"requestId\", b.data.createRequest.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($c:String!){ createRequest(companyId:$c, rightCode:\"ACCESS\"){ id status } }",
+                "variables": "{\n  \"c\": \"{{companyId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Isi kolom surat",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($i:String!){ updateRequestFields(id:$i, fields:{ fullName:\"Budi Santoso\", accountIdentifier:\"budi@example.com\", scope:\"Seluruh data pribadi saya\" }){ id status } }",
+                "variables": "{\n  \"i\": \"{{requestId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": "Kolom di luar definisi hak diabaikan (anti mass-assignment)."
+          }
+        },
+        {
+          "name": "Buat draf surat dari template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($i:String!){ generateLetter(id:$i){ letterBody letterDisclaimer } }",
+                "variables": "{\n  \"i\": \"{{requestId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Tinjau surat",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($i:String!){ reviewRequest(id:$i){ status } }",
+                "variables": "{\n  \"i\": \"{{requestId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Kirim lewat email platform",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });",
+                  "pm.test(\"status SENT + tenggat\", () => { const r = b.data.sendRequestEmail; if (r.status !== \"SENT\" || !r.deadline) throw new Error(JSON.stringify(r)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($i:String!){ sendRequestEmail(id:$i){ status sentAt deadline{ dueAt status ruleKey ruleVersion basisNote disclaimer } } }",
+                "variables": "{\n  \"i\": \"{{requestId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": "Baris dikunci sebelum email dikirim: klik ganda tidak mengirim dua kali. Email tertangkap di Mailpit; message-id + SHA-256 isi dicatat sebagai bukti kirim."
+          }
+        },
+        {
+          "name": "Unggah bukti (multipart)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"tersimpan dengan SHA-256\", () => { if (!/^[0-9a-f]{64}$/.test(b.sha256)) throw new Error(JSON.stringify(b)); });",
+                  "pm.collectionVariables.set(\"evidenceId\", b.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "docs/postman/bukti-contoh.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/evidence/{{requestId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["evidence", "{{requestId}}"]
+            },
+            "description": "PDF/PNG/JPG/WEBP maks 10 MB; jenis divalidasi dari isi (magic bytes), bukan ekstensi. Path berkas relatif ke root repo (newman --working-dir)."
+          }
+        },
+        {
+          "name": "Catat respons perusahaan + lampirkan bukti",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($i:String!,$e:String){ addCompanyResponse(id:$i, category:\"FULFILLED\", note:\"Data dikirim lewat email\", evidenceId:$e){ status responses{ category receivedAt } } }",
+                "variables": "{\n  \"i\": \"{{requestId}}\",\n  \"e\": \"{{evidenceId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Dossier (linimasa + bukti + bukti kirim)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query($i:String!){ dossier(requestId:$i){ deliveries{ kind toAddress messageId contentSha256 sentAt } request{ status dueAt events{ type actor verification occurredAt } responses{ category elapsedMs lateByMs } } } }",
+                "variables": "{\n  \"i\": \"{{requestId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Ekspor dossier (Markdown)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query($i:String!){ dossierExport(id:$i) }",
+                "variables": "{\n  \"i\": \"{{requestId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Tandai selesai",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($i:String!){ completeRequest(id:$i){ status } }",
+                "variables": "{\n  \"i\": \"{{requestId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Daftar permintaan saya",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ myRequests { id title status deadlineStatus dueAt } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Notifikasi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ notifications(take:10){ type title readAt } unreadCount }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Keamanan (uji negatif)",
+      "description": "Bukti cepat bahwa kontrol keamanan bekerja. Setiap request di sini HARUS ditolak.",
+      "item": [
+        {
+          "name": "Status ilegal: tinjau permintaan yang sudah selesai",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"ditolak dengan BAD_USER_INPUT\", () => {",
+                  "  const c = b.errors && b.errors[0].extensions.code;",
+                  "  if (c !== \"BAD_USER_INPUT\") throw new Error(\"kode error: \" + c + \" \" + JSON.stringify(b.errors || b.data));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($i:String!){ reviewRequest(id:$i){ status } }",
+                "variables": "{\n  \"i\": \"{{requestId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": "State machine di backend: COMPLETED tidak bisa kembali ke REVIEWED."
+          }
+        },
+        {
+          "name": "IDOR: ID acak / milik orang lain",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"ditolak dengan NOT_FOUND\", () => {",
+                  "  const c = b.errors && b.errors[0].extensions.code;",
+                  "  if (c !== \"NOT_FOUND\") throw new Error(\"kode error: \" + c + \" \" + JSON.stringify(b.errors || b.data));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query{ request(id:\"cl00000000000000000000000\"){ id } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": "ID milik orang lain dan ID yang tidak ada sama-sama NOT_FOUND, jadi keberadaan data tidak bocor."
+          }
+        },
+        {
+          "name": "Peran: USER memanggil fungsi admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"ditolak dengan FORBIDDEN\", () => {",
+                  "  const c = b.errors && b.errors[0].extensions.code;",
+                  "  if (c !== \"FORBIDDEN\") throw new Error(\"kode error: \" + c + \" \" + JSON.stringify(b.errors || b.data));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ auditLogs(take:1){ id } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Keluar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation{ logout }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": "Menaikkan tokenVersion: semua salinan cookie lama langsung tidak sah."
+          }
+        },
+        {
+          "name": "Tanpa sesi: endpoint terproteksi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"ditolak dengan UNAUTHENTICATED\", () => {",
+                  "  const c = b.errors && b.errors[0].extensions.code;",
+                  "  if (c !== \"UNAUTHENTICATED\") throw new Error(\"kode error: \" + c + \" \" + JSON.stringify(b.errors || b.data));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ myRequests { id } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Admin (akun demo)",
+      "description": "Masuk sebagai admin demo dari seed. Aturan hukum berversi dan audit log hanya untuk ADMIN.",
+      "item": [
+        {
+          "name": "Masuk sebagai admin demo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });",
+                  "pm.test(\"peran ADMIN\", () => { if (b.data.login.role !== \"ADMIN\") throw new Error(); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation($e:String!,$p:String!){ login(email:$e,password:$p){ role } }",
+                "variables": "{\n  \"e\": \"admin@hakdata.demo\",\n  \"p\": \"{{demoPassword}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Semua versi aturan tenggat",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ adminLegalRules { ruleKey version status durationHours effectiveFrom supersededAt } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Usulan kanal menunggu moderasi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ pendingSubmissions { id companyName type value sourceUrl } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Audit log (hanya baca)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ auditLogs(take:20){ action entity entityId createdAt } }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Keluar (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test(\"HTTP 200\", () => { if (pm.response.code !== 200) throw new Error(\"status \" + pm.response.code); });",
+                  "pm.test(\"tanpa error GraphQL\", () => { if (b.errors) throw new Error(JSON.stringify(b.errors)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation{ logout }",
+                "variables": "{}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            },
+            "description": ""
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "newEmail",
+      "value": ""
+    },
+    {
+      "key": "newPassword",
+      "value": ""
+    },
+    {
+      "key": "verifyToken",
+      "value": ""
+    },
+    {
+      "key": "companyId",
+      "value": ""
+    },
+    {
+      "key": "companySlug",
+      "value": ""
+    },
+    {
+      "key": "requestId",
+      "value": ""
+    },
+    {
+      "key": "evidenceId",
+      "value": ""
+    }
+  ]
+}

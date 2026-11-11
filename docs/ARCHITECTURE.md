@@ -89,7 +89,23 @@ sequenceDiagram
 
 ## 3. State machine
 
-Target mengikuti brief (D-003, menunggu persetujuan): `REVIEWED` dan `COMPLETED` dihapus; `ACKNOWLEDGED`, `OVERDUE`, `ESCALATED` ditambah.
+> **Yang berjalan sekarang** (sumber kebenaran: `apps/api/src/domain/request.state.ts`, D-003 belum disetujui):
+>
+> | Dari | Ke |
+> |---|---|
+> | DRAFT | REVIEWED, CLOSED |
+> | REVIEWED | DRAFT (surat/isian diubah), SENT, CLOSED |
+> | SENT | RESPONDED, OVERDUE (hanya pewaktu, aturan VERIFIED), COMPLETED, CLOSED |
+> | OVERDUE | RESPONDED, ESCALATED (hanya pengguna), COMPLETED, CLOSED |
+> | ESCALATED | RESPONDED, COMPLETED, CLOSED |
+> | RESPONDED | RESPONDED (balasan berikutnya), COMPLETED, CLOSED |
+> | COMPLETED | CLOSED |
+>
+> `ACKNOWLEDGED` sudah ada di enum tetapi belum punya transisi. Setiap penulisan status memakai compare-and-set
+> (`updateMany where id and status = yang dibaca`, `RequestsService.move`), sehingga aksi paralel tidak saling menimpa; `sendRequestEmail`
+> juga mengunci baris (`SELECT ... FOR UPDATE`) sebelum email dikirim agar surat tidak terkirim dua kali.
+>
+> Diagram dan aturan di bawah adalah **target** dari brief (belum diimplementasikan): `REVIEWED` dan `COMPLETED` dihapus; `ACKNOWLEDGED` dipakai.
 
 ```mermaid
 stateDiagram-v2
@@ -136,7 +152,8 @@ flowchart LR
   EXD -->|wait.5m| W5["wait.5m ttl 5m"]
   EXD -->|wait.1m| WM["wait.1m ttl 1m"]
   EXD -->|wait.10s| WS["wait.10s ttl 10s"]
-  W7 & W1 & WH & W5 & WM & WS -->|"x-dead-letter-exchange"| EXU{{"hd.due (direct)"}}
+  EXD -->|wait.1s| W1s["wait.1s ttl 1s"]
+  W7 & W1 & WH & W5 & WM & WS & W1s -->|"x-dead-letter-exchange"| EXU{{"hd.due (direct)"}}
   EXU -->|due| QD["due.reminders"]
   QD --> CON[Consumer]
   CON -->|"sisa > 0: publish ulang"| EXD
@@ -149,12 +166,14 @@ flowchart LR
 | Elemen | Jenis | Argumen / kunci | Catatan |
 |---|---|---|---|
 | `hd.delay` | exchange direct, durable | routing key `wait.<tingkat>` | Tingkat dipilih dari sisa waktu **setelah** skala |
-| `wait.7d`, `1d`, `1h`, `5m`, `1m`, `10s` | queue durable | `x-message-ttl` = tingkat; `x-dead-letter-exchange=hd.due`; `x-dead-letter-routing-key=due` | Tanpa consumer; hanya penahan. Maks 49 hari per TTL RabbitMQ (cukup, follow-up 14 hari) |
+| `wait.7d`, `1d`, `1h`, `5m`, `1m`, `10s`, `1s` | queue durable | `x-message-ttl` = tingkat; `x-dead-letter-exchange=hd.due`; `x-dead-letter-routing-key=due` | Tanpa consumer; hanya penahan. Maks 49 hari per TTL RabbitMQ (cukup, follow-up 14 hari). Tingkat `1s` ditambahkan (implementasi) agar ketepatan akhir ±1 dtk tanpa konsumen menunggu; sisa < 1 dtk memakai `1s` dan selisihnya dikoreksi cek DB |
 | `hd.due` | exchange direct | key `due` | |
-| `due.reminders` | queue durable | `x-dead-letter-exchange=hd.retry`; prefetch 10 | Satu-satunya queue yang dikonsumsi |
+| `due.reminders` | queue durable | `x-dead-letter-exchange=hd.retry`, `x-dead-letter-routing-key=retry.5s`; prefetch 10 | Satu-satunya queue yang dikonsumsi. Kegagalan handler dipublish eksplisit (confirm) ke `hd.retry` lalu di-ack; DLX hanya jaring pengaman bila publish itu sendiri gagal (nack → `retry.5s`) |
 | `hd.retry` | exchange direct | key `retry.5s`, `retry.30s`, `retry.2m`, `retry.10m` | Backoff eksponensial menggantikan 30 dtk tetap |
 | `retry.*` | queue durable | TTL sesuai nama; DLX `hd.due` | Konsumen menaikkan header `x-attempt` saat publish ulang |
-| `due.reminders.failed` | queue durable | tanpa DLX | Alarm bila > 0. Pesan rusak (parse gagal) langsung ke sini |
+| `due.reminders.failed` | queue durable | tanpa DLX | Alarm bila > 0. Pesan rusak (parse gagal) langsung ke sini; percobaan ke-5 yang gagal juga ke sini |
+
+Nama exchange/queue memakai prefix `RABBIT_PREFIX` (default `hd`, mis. `hd.wait.1h`). Deklarasi dijalankan saat boot dan setiap sambung ulang (idempoten; mengubah argumen queue yang sudah ada = `PRECONDITION_FAILED`, sengaja).
 
 Routing key domain untuk notifikasi masa depan (email stretch): exchange `hd.events` (topic) dengan `request.sent`, `request.overdue`, `request.escalated`, `reminder.approaching` → queue `notify.inapp` (dan `notify.email` bila stretch). MVP memakai jalur reminder di atas; `hd.events` hanya dibuat bila email dikerjakan.
 
@@ -171,10 +190,11 @@ Routing key domain untuk notifikasi masa depan (email stretch): exchange `hd.eve
 | Lapisan | Mekanisme | Mencegah |
 |---|---|---|
 | Publish | Transactional outbox + publisher confirm; `publishedAt` diisi setelah confirm. Publish ulang aman | Kehilangan pesan antara commit DB dan broker |
-| Konsumen | `Reminder.firedAt` lewat conditional update (`where firedAt is null`); `Notification.dedupeKey` unik `reminderId:kind:ruleVersion`; transisi lewat conditional update status | Pemrosesan ganda (pesan ganda, dua konsumen, redelivery) |
+| Konsumen | `Reminder.firedAt` lewat conditional update (`where firedAt is null`); `Notification.dedupeKey` unik `reminder:<id>:<fireAt>` (fireAt ikut agar pengingat yang dijadwal ulang tetap memberi tahu); transisi lewat conditional update status | Pemrosesan ganda (pesan ganda, dua konsumen, redelivery) |
+| Email pengingat | Klaim berupa sewa `Notification.emailClaimedAt` (5 menit); `emailedAt` ditulis segera setelah SMTP menerima, sebelum bukti kirim dicatat | Email hilang saat instance mati di tengah kirim; email ganda saat pencatatan bukti gagal |
 | Waktu | Konsumen mengabaikan TTL: bila `fireAt > now + toleransi`, publish ulang ke tingkat berikutnya; bila status bukan SENT/ACKNOWLEDGED, ack tanpa efek | Pesan datang terlalu cepat atau permintaan sudah dibalas |
 | Ack | Ack **setelah** transaksi commit; error → retry berjenjang; > 5 → DLQ | Kehilangan pekerjaan saat crash |
-| Rekonsiliasi | Cron 60 dtk, dikunci `pg_try_advisory_lock`: (1) outbox belum terbit > 30 dtk → publish; (2) reminder `fireAt <= now`, belum `firedAt`, `queuedAt` kosong atau > 2 menit → antre ulang; (3) `Deadline.dueAt <= now` dengan status SENT/ACKNOWLEDGED → panggil `applyOverdue(requestId)` **langsung** | Broker mati lama, queue ter-purge, restart, pesan tersangkut |
+| Rekonsiliasi | Cron 60 dtk. Tiap batch (200 baris) adalah transaksi sendiri yang mengambil `pg_try_advisory_xact_lock`, sehingga backlog besar tetap maju (komit bertahap) dan hanya satu instance yang bekerja per batch: (1) outbox belum terbit > 30 dtk → publish; (2) reminder `fireAt <= now`, belum `firedAt`, `queuedAt` kosong atau > 2 menit → antre ulang; (3) `Deadline.dueAt <= now` dengan status SENT/ACKNOWLEDGED → panggil `applyOverdue(requestId)` **langsung** | Broker mati lama, queue ter-purge, restart, pesan tersangkut |
 
 Satu fungsi domain (`applyReminder(id)`, `applyOverdue(requestId)`) dipakai bersama oleh konsumen dan cron, jadi jalur normal dan jalur pemulihan tidak bisa berbeda perilaku. Bukti wajib lewat test integrasi: (a) kirim pesan sama dua kali, (b) dua konsumen paralel, (c) broker dimatikan saat tenggat lewat lalu dinyalakan, (d) `purge` semua queue lalu rekonsiliasi memulihkan, (e) restart API di tengah tangga.
 

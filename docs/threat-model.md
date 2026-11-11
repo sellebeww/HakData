@@ -1,8 +1,11 @@
 <!-- Copyright (c) 2026 Vassel Goleyu. All rights reserved. -->
 # Threat Model (STRIDE)
+
+> **Versi terbaru: [SECURITY.md](SECURITY.md)** (model ancaman lengkap, mitigasi per kode, dan test yang membuktikannya). Tabel di bawah adalah ringkasan awal yang dipertahankan untuk riwayat.
+
 | # | Ancaman | Dampak | Kemungkinan | Mitigasi | Status |
 |---|---|---|---|---|---|
-| S1 | Brute force/credential stuffing login | Ambil alih akun | Sedang | Kunci 5 gagal/10 mnt per email, bcrypt 12, rate limit global, waktu respons seragam | Terimplementasi; penguncian in-memory (tidak lintas instance), tanpa rate limit per IP |
+| S1 | Brute force/credential stuffing login | Ambil alih akun | Sedang | Kunci 5 gagal/10 mnt per (IP, email) agar penyerang tidak bisa mengunci akun orang lain, argon2id, rate limit per IP asli (trust proxy untuk proxy Next), waktu respons seragam, register tidak membocorkan email terdaftar | Terimplementasi; penguncian in-memory (tidak lintas instance, dibatasi 10.000 entri). Refresh token belum dirotasi (butuh tabel sesi per perangkat) |
 | S2 | Pencurian sesi | Akses data | Sedang | Cookie httpOnly, SameSite=Lax, secure di prod, JWT 7 hari | Terimplementasi; **belum ada pencabutan token** selain hapus akun |
 | T1 | Mass assignment | Ubah status/user | Sedang | Hanya kunci field yang dikenal diterima; skema GraphQL | Teruji |
 | T2 | Manipulasi dossier/bukti | Bukti diragukan | Sedang | Timeline append-only lewat aplikasi, sha256 berkas, label USER_UPLOADED | Parsial: DB admin tetap bisa mengubah; tanpa hash-chain |
