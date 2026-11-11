@@ -109,9 +109,6 @@ export default function CompanyPage() {
                       " · tanpa sumber"
                     )}
                   </small>
-                  {ch.status === "OUTDATED" && (
-                    <p className="note">Kanal ini mungkin sudah tidak berlaku. Periksa situs resmi sebelum mengirim.</p>
-                  )}
                 </li>
               ))}
             </ul>
@@ -125,34 +122,37 @@ export default function CompanyPage() {
         <section className="panel">
           <h2>Statistik agregat</h2>
           <Badge tone={st.isDemoData ? "demo" : "info"}>{st.label}</Badge>
-          <div className="stat">
-            <div>
-              <b>{st.requestsRecorded}</b>
-              <span>permintaan tercatat</span>
-            </div>
-            <div>
-              <b>{st.responsesRecorded}</b>
-              <span>respons tercatat</span>
-            </div>
-            <div>
-              <b>{st.withEvidence}</b>
-              <span>punya bukti</span>
-            </div>
-          </div>
           {st.sufficient ? (
-            <div className="stat">
-              <div>
-                <b>{Math.round(st.responseRatio * 100)}%</b>
-                <span>rasio respons tercatat</span>
+            <>
+              <div className="stat">
+                <div>
+                  <b>{st.requestsRecorded}</b>
+                  <span>permintaan terkirim lewat platform</span>
+                </div>
+                <div>
+                  <b>{st.responsesRecorded}</b>
+                  <span>respons tercatat</span>
+                </div>
+                <div>
+                  <b>{st.withEvidence}</b>
+                  <span>punya bukti</span>
+                </div>
               </div>
-              <div>
-                <b>{st.medianResponseHours != null ? `${st.medianResponseHours} jam` : "n/a"}</b>
-                <span>median ke respons pertama</span>
+              <div className="stat">
+                <div>
+                  <b>{Math.round(st.responseRatio * 100)}%</b>
+                  <span>rasio respons tercatat</span>
+                </div>
+                <div>
+                  <b>{st.medianResponseHours != null ? `${st.medianResponseHours} jam` : "n/a"}</b>
+                  <span>median ke respons pertama</span>
+                </div>
               </div>
-            </div>
+            </>
           ) : (
             <p className="note">
-              Belum tersedia: sampel kurang dari {st.minSample} permintaan. Kami tidak menampilkan angka dari data yang terlalu sedikit.
+              Belum tersedia: data berasal dari kurang dari {st.minSample} pengguna berbeda. Kami tidak menampilkan angka apa pun dari data
+              yang terlalu sedikit agar tidak ada pengguna yang dapat dikenali.
             </p>
           )}
           <details>

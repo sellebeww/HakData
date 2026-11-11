@@ -15,10 +15,9 @@ enum Role {
 }
 
 enum VerificationStatus {
-  VERIFIED
-  COMMUNITY_REPORTED
   UNVERIFIED
-  OUTDATED
+  COMMUNITY_VERIFIED
+  OFFICIAL
 }
 
 enum ChannelType {
@@ -35,13 +34,29 @@ enum RuleStatus {
   NOT_VERIFIED
 }
 
+// REVIEWED dan COMPLETED sengaja DIPERTAHANKAN sementara (D-003): penghapusannya ikut penulisan ulang state machine, bukan fase ini.
 enum RequestStatus {
   DRAFT
   REVIEWED
   SENT
+  ACKNOWLEDGED
   RESPONDED
+  OVERDUE
+  ESCALATED
   COMPLETED
   CLOSED
+}
+
+enum CloseReason {
+  CANCELLED
+  WITHDRAWN
+  RESOLVED
+  UNRESOLVED
+}
+
+enum DeadlineBasis {
+  SENT_ESTIMATE
+  RECEIVED
 }
 
 enum EvidenceSource {
@@ -62,6 +77,13 @@ enum ResponseCategory {
   OTHER
 }
 
+// Perilaku perusahaan simulasi (hanya perusahaan isDemo, aktif bila DEMO_MODE=true).
+enum SimBehavior {
+  REPLIES
+  REPLIES_LATE
+  SILENT
+}
+
 enum ReminderKind {
   APPROACHING
   PASSED
@@ -75,16 +97,20 @@ enum SubmissionStatus {
 }
 
 model User {
-  id            String              @id @default(cuid())
-  email         String              @unique
-  passwordHash  String
-  name          String
-  role          Role                @default(USER)
-  deletedAt     DateTime?
-  createdAt     DateTime            @default(now())
-  requests      PrivacyRequest[]
-  notifications Notification[]
-  submissions   ChannelSubmission[]
+  id              String              @id @default(cuid())
+  email           String              @unique
+  passwordHash    String
+  name            String
+  role            Role                @default(USER)
+  emailVerifiedAt DateTime?
+  tokenVersion    Int                 @default(0)
+  deletedAt       DateTime?
+  createdAt       DateTime            @default(now())
+  requests        PrivacyRequest[]
+  notifications   Notification[]
+  submissions     ChannelSubmission[]
+  dossierExports  DossierExport[]
+  reports         ModerationReport[]
 }
 
 model Company {
@@ -96,6 +122,7 @@ model Company {
   industry    String
   website     String?
   isDemo      Boolean             @default(false)
+  simulation  SimBehavior?
   notes       String?
   createdAt   DateTime            @default(now())
   channels    PrivacyChannel[]
@@ -103,6 +130,7 @@ model Company {
   submissions ChannelSubmission[]
 
   @@index([industry])
+  @@index([name])
 }
 
 model PrivacyChannel {
@@ -118,6 +146,7 @@ model PrivacyChannel {
   requests      PrivacyRequest[]
 
   @@unique([companyId, type, value])
+  @@index([companyId, status])
 }
 
 model ChannelSubmission {
@@ -133,7 +162,8 @@ model ChannelSubmission {
   reviewNote String?
   createdAt  DateTime         @default(now())
 
-  @@index([status])
+  @@index([status, createdAt])
+  @@index([userId])
 }
 
 model DataRight {
@@ -160,6 +190,7 @@ model LegalRule {
   calcMethod     String     @default("CALENDAR_HOURS")
   applicability  String?
   exceptions     String?
+  sourceRef      String?
   status         RuleStatus
   verifiedBy     String?
   lastReviewedAt DateTime?
@@ -183,34 +214,44 @@ model RequestTemplate {
 }
 
 model PrivacyRequest {
-  id              String              @id @default(cuid())
+  id              String            @id @default(cuid())
   userId          String
-  user            User                @relation(fields: [userId], references: [id])
+  user            User              @relation(fields: [userId], references: [id])
   companyId       String
-  company         Company             @relation(fields: [companyId], references: [id])
+  company         Company           @relation(fields: [companyId], references: [id])
   rightCode       String
   channelId       String?
-  channel         PrivacyChannel?     @relation(fields: [channelId], references: [id])
-  status          RequestStatus       @default(DRAFT)
+  channel         PrivacyChannel?   @relation(fields: [channelId], references: [id])
+  status          RequestStatus     @default(DRAFT)
+  closeReason     CloseReason?
   title           String
   fields          Json
-  letterBody      String              @default("")
+  letterBody      String            @default("")
   templateVersion Int?
   sentAt          DateTime?
   sentVia         String?
   receivedAt      DateTime?
-  followUpDays    Int                 @default(14)
+  overdueAt       DateTime?
+  escalatedAt     DateTime?
+  closedAt        DateTime?
+  followUpDays    Int               @default(14)
+  version         Int               @default(0)
   deletedAt       DateTime?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
   deadline        Deadline?
   events          TimelineEvent[]
   evidence        Evidence[]
   responses       CompanyResponse[]
-  reminders       ScheduledReminder[]
+  reminders       Reminder[]
+  dossierExports  DossierExport[]
+  emailDeliveries EmailDelivery[]
 
   @@index([userId, status])
+  @@index([userId, createdAt(sort: Desc)])
   @@index([companyId, rightCode])
+  @@index([channelId])
+  @@index([status, sentAt])
 }
 
 model Deadline {
@@ -219,11 +260,17 @@ model Deadline {
   request     PrivacyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   ruleId      String
   rule        LegalRule      @relation(fields: [ruleId], references: [id])
+  ruleVersion Int            @default(1)
+  basis       DeadlineBasis  @default(SENT_ESTIMATE)
+  timeScale   Int            @default(1)
   startedAt   DateTime
   dueAt       DateTime?
   timezone    String
   basisNote   String
   completedAt DateTime?
+
+  @@index([dueAt])
+  @@index([ruleId])
 }
 
 model TimelineEvent {
@@ -232,6 +279,7 @@ model TimelineEvent {
   request      PrivacyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   type         String
   actor        String
+  actorId      String? // pengguna pelaku; null untuk SYSTEM
   description  String
   occurredAt   DateTime       @default(now())
   metadata     Json?
@@ -252,6 +300,8 @@ model Evidence {
   sha256       String
   source       EvidenceSource @default(USER_UPLOADED)
   createdAt    DateTime       @default(now())
+
+  @@index([requestId])
 }
 
 model CompanyResponse {
@@ -262,48 +312,58 @@ model CompanyResponse {
   note       String?
   receivedAt DateTime
   evidenceId String?
+  simulated  Boolean          @default(false)
   createdAt  DateTime         @default(now())
 
-  @@index([requestId])
+  @@index([requestId, receivedAt])
 }
 
-model ScheduledReminder {
-  id        String         @id @default(cuid())
-  requestId String
-  request   PrivacyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  kind      ReminderKind
-  fireAt    DateTime
-  queuedAt  DateTime?
-  firedAt   DateTime?
+model Reminder {
+  id          String         @id @default(cuid())
+  requestId   String
+  request     PrivacyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  kind        ReminderKind
+  fireAt      DateTime
+  ruleVersion Int?
+  queuedAt    DateTime?
+  firedAt     DateTime?
+  attempts    Int            @default(0)
+  lastError   String?
 
   @@unique([requestId, kind])
   @@index([fireAt, firedAt])
+  @@map("ScheduledReminder")
 }
 
 model Notification {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  requestId String?
-  type      String
-  title     String
-  body      String
-  dedupeKey String    @unique
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestId      String?
+  type           String
+  title          String
+  body           String
+  dedupeKey      String    @unique
+  readAt         DateTime?
+  emailedAt      DateTime? // waktu email pengingat diterima SMTP; null = belum terkirim
+  emailClaimedAt DateTime? // sewa klaim pengiriman (kedaluwarsa setelah EMAIL_LEASE_MS bila instance mati)
+  createdAt      DateTime  @default(now())
 
   @@index([userId, readAt])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 model OutboxEvent {
-  id          String    @id @default(cuid())
-  type        String
-  payload     Json
-  createdAt   DateTime  @default(now())
-  publishedAt DateTime?
-  attempts    Int       @default(0)
+  id            String    @id @default(cuid())
+  type          String
+  payload       Json
+  createdAt     DateTime  @default(now())
+  publishedAt   DateTime?
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime?
+  lastError     String?
 
-  @@index([publishedAt])
+  @@index([publishedAt, createdAt])
 }
 
 model AuditLog {
@@ -316,4 +376,49 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([entity, entityId])
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+}
+
+model DossierExport {
+  id            String         @id @default(cuid())
+  requestId     String
+  request       PrivacyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentSha256 String
+  ruleVersion   Int?
+  eventCount    Int
+  createdAt     DateTime       @default(now())
+
+  @@index([requestId, createdAt])
+}
+
+// STRETCH (risiko R4): laporan konten kanal/usulan yang keliru. Tabel disiapkan, belum ada resolver.
+model ModerationReport {
+  id         String    @id @default(cuid())
+  reporterId String
+  reporter   User      @relation(fields: [reporterId], references: [id])
+  entity     String
+  entityId   String
+  reason     String
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([resolvedAt, createdAt])
+}
+
+// Bukti kirim email: message-id dari SMTP, waktu, dan hash isi (subjek + badan). Tidak menyimpan isi.
+model EmailDelivery {
+  id            String          @id @default(cuid())
+  requestId     String?
+  request       PrivacyRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  kind          String // REQUEST | REMINDER
+  toAddress     String
+  subject       String
+  messageId     String
+  contentSha256 String
+  sentAt        DateTime
+
+  @@index([requestId, sentAt])
 }

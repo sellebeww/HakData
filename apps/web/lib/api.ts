@@ -8,7 +8,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function gql<T = any>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+async function post(query: string, variables: Record<string, unknown>) {
   let res: Response;
   try {
     res = await fetch("/api/graphql", {
@@ -22,6 +22,23 @@ export async function gql<T = any>(query: string, variables: Record<string, unkn
   }
   const body = await res.json().catch(() => null);
   if (!body) throw new ApiError("Respons server tidak valid.", "BAD_RESPONSE");
+  return body;
+}
+
+// Access token hanya 15 menit: bila kedaluwarsa, tukar dengan refresh token sekali (satu penerbangan) lalu ulangi permintaan.
+let refreshing: Promise<boolean> | null = null;
+export const refreshSession = () =>
+  (refreshing ??= post(`mutation{refresh{id}}`, {})
+    .then((b) => !b.errors?.length)
+    .catch(() => false)
+    .finally(() => {
+      refreshing = null;
+    }));
+
+export async function gql<T = any>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+  let body = await post(query, variables);
+  if (body.errors?.[0]?.extensions?.code === "UNAUTHENTICATED" && !/\b(login|refresh|logout)\b/.test(query) && (await refreshSession()))
+    body = await post(query, variables);
   if (body.errors?.length) throw new ApiError(body.errors[0].message, body.errors[0].extensions?.code ?? "ERROR");
   return body.data as T;
 }

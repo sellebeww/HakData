@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Vassel Goleyu. All rights reserved.
 "use client";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { gql } from "./api";
+import { gql, refreshSession } from "./api";
 
 export type Me = { id: string; email: string; name: string; role: "USER" | "MODERATOR" | "ADMIN" } | null;
 const Ctx = createContext<{ me: Me; loading: boolean; refresh: () => Promise<void>; logout: () => Promise<void> }>({
@@ -17,7 +17,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const refresh = useCallback(async () => {
     try {
-      setMe((await gql<{ me: Me }>(`{me{id email name role}}`)).me);
+      const q = `{me{id email name role}}`;
+      let m = (await gql<{ me: Me }>(q)).me;
+      // `me` publik (null, bukan error) saat access token kedaluwarsa: coba pulihkan sesi dari refresh token
+      if (!m && (await refreshSession())) m = (await gql<{ me: Me }>(q)).me;
+      setMe(m);
     } catch {
       setMe(null);
     } finally {

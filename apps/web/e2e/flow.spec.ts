@@ -6,7 +6,7 @@ const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 const SHOTS = "e2e/screens";
 mkdirSync(SHOTS, { recursive: true });
 
-test("alur lengkap pengguna: daftar → cari → surat → kirim → bukti → respons → selesai", async ({ page }) => {
+test("alur lengkap pengguna: daftar → cari → surat → kirim → bukti → respons → selesai", async ({ page, request }) => {
   const errors: string[] = [];
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -20,9 +20,25 @@ test("alur lengkap pengguna: daftar → cari → surat → kirim → bukti → r
   // TEST 1: akun
   await page.getByRole("link", { name: "Mulai gratis" }).click();
   await page.getByLabel("Nama").fill("Budi Santoso");
-  await page.getByLabel("Email").fill(`e2e${Date.now()}@test.dev`);
+  const email = `e2e${Date.now()}@test.dev`;
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("Kata sandi").fill("RahasiaBanget!2026");
   await page.getByRole("button", { name: "Daftar" }).click();
+  await expect(page.getByRole("heading", { name: "Cek email Anda" })).toBeVisible();
+  // verifikasi lewat email yang sungguh tiba di Mailpit
+  const mp = process.env.MAILPIT_URL ?? "http://localhost:8025";
+  let token = "";
+  await expect(async () => {
+    const list = await (await request.get(`${mp}/api/v1/search?query=${encodeURIComponent("to:" + email)}`)).json();
+    const msg = await (await request.get(`${mp}/api/v1/message/${list.messages[0].ID}`)).json();
+    token = msg.Text.match(/token=([^\s&]+)/)[1];
+  }).toPass({ timeout: 10_000 });
+  await page.goto(`/verifikasi?token=${token}`);
+  await expect(page.getByText("Email terverifikasi")).toBeVisible();
+  await page.goto("/masuk");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Kata sandi").fill("RahasiaBanget!2026");
+  await page.getByRole("button", { name: "Masuk" }).click();
   await expect(page.getByRole("heading", { name: /Halo, Budi/ })).toBeVisible();
 
   // TEST 2-3: cari + detail
@@ -31,7 +47,7 @@ test("alur lengkap pengguna: daftar → cari → surat → kirim → bukti → r
   await expect(page.getByText("1 perusahaan")).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/02-direktori.png` });
   await page.getByRole("link", { name: /DEMO · Toko Contoh/ }).click();
-  await expect(page.getByText("Terverifikasi").first()).toBeVisible();
+  await expect(page.getByText("Resmi").first()).toBeVisible();
   await expect(page.getByText(/rasio respons tercatat/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/03-perusahaan.png`, fullPage: true });
 
@@ -47,6 +63,7 @@ test("alur lengkap pengguna: daftar → cari → surat → kirim → bukti → r
   await expect(page.getByLabel("Isi surat")).toHaveValue(/Pasal 32/);
   await page.screenshot({ path: `${SHOTS}/04-surat.png`, fullPage: true });
   await page.getByRole("button", { name: /setujui/ }).click();
+  await page.getByRole("link", { name: /Saya kirim sendiri/ }).click(); // langkah Kirim: jalur manual
   await expect(page.getByText("Siap dikirim").first()).toBeVisible();
 
   // TEST 8-10: catat pengiriman 80 jam lalu → tenggat terlewati
@@ -132,4 +149,13 @@ test("admin menerbitkan aturan dan melihat audit log", async ({ page }) => {
   await page.screenshot({ path: `${SHOTS}/09-admin-aturan.png`, fullPage: true });
   await page.getByRole("tab", { name: "Audit log" }).click();
   await expect(page.getByText("Audit log (hanya baca)")).toBeVisible();
+});
+
+test("header keamanan web: anti-clickjacking, nosniff, CSP minimal", async ({ request }) => {
+  const h = (await request.get("/")).headers();
+  expect(h["x-frame-options"]).toBe("DENY");
+  expect(h["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(h["content-security-policy"]).toContain("object-src 'none'");
+  expect(h["x-content-type-options"]).toBe("nosniff");
+  expect(h["x-powered-by"]).toBeUndefined();
 });

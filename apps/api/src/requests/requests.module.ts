@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Vassel Goleyu. All rights reserved.
+import { LettersModule } from "../letters/letters.module";
 import {
   BadRequestException,
   Controller,
@@ -82,6 +83,17 @@ export class RequestsResolver {
     @Args("followUpDays", { type: () => Int, nullable: true }) f?: number,
   ) {
     return this.s.recordSent(u, id, { sentVia: via, sentAt, receivedAt, followUpDays: f });
+  }
+  @Mutation(() => RequestT, { description: "Kirim surat lewat email ke kanal privasi perusahaan dan catat pengiriman (bukti kirim)." })
+  sendRequestEmail(@CurrentUser() u: AuthUser, @Args("id") id: string) {
+    return this.s.sendByEmail(u, id);
+  }
+  @Mutation(() => RequestT) escalateRequest(
+    @CurrentUser() u: AuthUser,
+    @Args("id") id: string,
+    @Args("note", { nullable: true }) note?: string,
+  ) {
+    return this.s.escalate(u, id, note);
   }
   @Mutation(() => RequestT) recordReceipt(
     @CurrentUser() u: AuthUser,
@@ -178,14 +190,27 @@ export class EvidenceController {
   @Get(":id/download") async download(@Param("id") id: string, @Req() req: { user: AuthUser }, @Res() res: any) {
     const e = await this.prisma.evidence.findFirst({ where: { id, request: { userId: req.user.id, deletedAt: null } } });
     if (!e) throw new NotFoundException("Bukti tidak ditemukan.");
-    res.set({
-      "Content-Type": e.mime,
-      "X-Content-Type-Options": "nosniff",
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(e.originalName)}`,
-      "Cache-Control": "private, no-store",
+    const s = fileStream(e.storageKey);
+    // Tanpa handler 'error', berkas yang hilang (ENOENT) menjadi exception tak tertangani dan mematikan seluruh proses API.
+    s.once("error", () => {
+      if (!res.headersSent) res.status(404).json({ statusCode: 404, message: "Berkas bukti tidak tersedia di penyimpanan." });
+      else res.destroy();
     });
-    fileStream(e.storageKey).pipe(res);
+    s.once("open", () => {
+      res.set({
+        "Content-Type": e.mime,
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(e.originalName)}`,
+        "Cache-Control": "private, no-store",
+      });
+      s.pipe(res);
+    });
   }
 }
-@Module({ providers: [RequestsService, RequestsResolver], controllers: [EvidenceController], exports: [RequestsService] })
+@Module({
+  imports: [LettersModule],
+  providers: [RequestsService, RequestsResolver],
+  controllers: [EvidenceController],
+  exports: [RequestsService],
+})
 export class RequestsModule {}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { gql, uploadEvidence } from "@/lib/api";
-import { DEADLINE_STATUS, EVIDENCE_SRC, REQUEST_STATUS, RESPONSE_CAT, fmtDateTime, toLocalInput } from "@/lib/format";
+import { DEADLINE_STATUS, EVIDENCE_SRC, REQUEST_STATUS, RESPONSE_CAT, fmtDateTime, statusTone, toLocalInput } from "@/lib/format";
 import { Badge, Button, Confirm, Empty, ErrorBox, Field, Skeleton, Tabs, useQuery, useToast } from "@/components/ui";
 
 const F = `id title status rightCode letterBody sentAt sentVia receivedAt followUpDays right{title} company{slug name}
@@ -63,7 +63,7 @@ export default function RequestDetail() {
       </div>
     );
   const r = data;
-  const sent = ["SENT", "RESPONDED"].includes(r.status);
+  const sent = ["SENT", "OVERDUE", "ESCALATED", "RESPONDED"].includes(r.status);
 
   const act = async (key: string, fn: () => Promise<any>, ok: string) => {
     setBusy(key);
@@ -90,7 +90,8 @@ export default function RequestDetail() {
         <div>
           <h1>{r.title}</h1>
           <div className="row">
-            <Badge tone="info">{REQUEST_STATUS[r.status]}</Badge>
+            <Badge tone={statusTone(r.status)}>{REQUEST_STATUS[r.status]}</Badge>
+            <Link href={`/app/permintaan/${r.id}/dossier`}>Buka dossier</Link>
             <Link href={`/perusahaan/${r.company.slug}`}>{r.company.name}</Link>
           </div>
         </div>
@@ -126,9 +127,13 @@ export default function RequestDetail() {
             {r.status === "REVIEWED" && (
               <>
                 <p>
-                  Kirim surat lewat kanal yang kamu pilih (salin dari tab Surat), lalu catat pengirimannya di sini. Hak Data tidak mengirim
-                  apa pun otomatis.
+                  Kirim lewat email Hak Data ke kanal email privasi perusahaan, atau kirim sendiri lewat kanal lain (salin dari tab Surat)
+                  lalu catat pengirimannya di bawah. Tidak ada yang terkirim tanpa kamu menekan tombol.
                 </p>
+                <Button loading={busy === "email"} onClick={() => setConfirm("email")}>
+                  Kirim lewat email sekarang
+                </Button>
+                <h3 style={{ marginTop: 20 }}>Atau catat pengiriman manual</h3>
                 <Field
                   label="Dikirim via"
                   value={send.via}
@@ -173,26 +178,42 @@ export default function RequestDetail() {
                 <p>
                   Permintaan terkirim {fmtDateTime(r.sentAt)} via {r.sentVia}. Catat balasan di tab Respons dan simpan bukti di tab Dossier.
                 </p>
-                <Field
-                  label="Waktu diterima perusahaan"
-                  type="datetime-local"
-                  value={rcpt}
-                  onChange={(e: any) => setRcpt(e.target.value)}
-                />
+                {r.status === "OVERDUE" && (
+                  <p className="note" role="status">
+                    Estimasi tenggat terlewati tanpa respons tercatat. Ini bukan putusan pelanggaran. Kamu dapat mengeskalasi agar dossier
+                    siap dilaporkan.
+                  </p>
+                )}
+                {r.status === "ESCALATED" && <p className="note">Permintaan dieskalasi. Unduh dossier dari halaman dossier.</p>}
+                {["SENT", "RESPONDED"].includes(r.status) && (
+                  <Field
+                    label="Waktu diterima perusahaan"
+                    type="datetime-local"
+                    value={rcpt}
+                    onChange={(e: any) => setRcpt(e.target.value)}
+                  />
+                )}
                 <div className="row">
-                  <Button
-                    variant="ghost"
-                    loading={busy === "rcpt"}
-                    onClick={() =>
-                      act(
-                        "rcpt",
-                        () => m(`recordReceipt(id:$i,receivedAt:$t)`, "$i:String!,$t:DateTime!", { i: r.id, t: iso(rcpt) }),
-                        "Waktu diterima dicatat, tenggat dihitung ulang.",
-                      )
-                    }
-                  >
-                    Catat waktu diterima
-                  </Button>
+                  {r.status === "OVERDUE" && (
+                    <Button variant="danger" loading={busy === "esc"} onClick={() => setConfirm("esc")}>
+                      Eskalasi
+                    </Button>
+                  )}
+                  {["SENT", "RESPONDED"].includes(r.status) && (
+                    <Button
+                      variant="ghost"
+                      loading={busy === "rcpt"}
+                      onClick={() =>
+                        act(
+                          "rcpt",
+                          () => m(`recordReceipt(id:$i,receivedAt:$t)`, "$i:String!,$t:DateTime!", { i: r.id, t: iso(rcpt) }),
+                          "Waktu diterima dicatat, tenggat dihitung ulang.",
+                        )
+                      }
+                    >
+                      Catat waktu diterima
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     onClick={() =>
@@ -490,6 +511,22 @@ export default function RequestDetail() {
             "Pengiriman dicatat. Estimasi tenggat dibuat.",
           )
         }
+      />
+      <Confirm
+        open={confirm === "email"}
+        title="Kirim email sekarang?"
+        body="Surat dikirim ke kanal email privasi perusahaan. Setelah terkirim, surat tidak dapat diubah dan estimasi tenggat dihitung."
+        onCancel={() => setConfirm(null)}
+        onConfirm={() =>
+          act("email", () => m(`sendRequestEmail(id:$i)`, "$i:String!", { i: r.id }), "Email terkirim. Estimasi tenggat dibuat.")
+        }
+      />
+      <Confirm
+        open={confirm === "esc"}
+        title="Eskalasi permintaan?"
+        body="Status menjadi Dieskalasi dan pengingat dihentikan. Ini keputusanmu; sistem tidak menyimpulkan adanya pelanggaran."
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => act("esc", () => m(`escalateRequest(id:$i)`, "$i:String!", { i: r.id }), "Permintaan dieskalasi.")}
       />
       <Confirm
         open={confirm === "done"}

@@ -3,6 +3,12 @@ const base = { preset: "ts-jest", testEnvironment: "node", rootDir: ".", transfo
 module.exports = {
   projects: [
     { ...base, displayName: "unit", testMatch: ["<rootDir>/src/**/*.spec.ts"] },
-    { ...base, displayName: "int", testMatch: ["<rootDir>/test/**/*.int.ts"], testTimeout: 60000 },
+    {
+      ...base,
+      displayName: "int",
+      testMatch: ["<rootDir>/test/**/*.int.ts"],
+      testTimeout: 60000,
+      globalSetup: "<rootDir>/test/global-setup.ts",
+    },
   ],
 };

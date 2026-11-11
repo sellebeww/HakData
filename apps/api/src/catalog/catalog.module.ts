@@ -17,6 +17,7 @@ class PublishRuleInput {
   @Field({ nullable: true }) applicability?: string;
   @Field(() => Date) effectiveFrom: Date;
   @Field() verifiedBy: string;
+  @Field({ nullable: true }) sourceRef?: string;
 }
 
 @Injectable()
@@ -39,9 +40,13 @@ export class CatalogService {
   async publishRule(actor: AuthUser, i: PublishRuleInput) {
     if (!["VERIFIED", "NEEDS_CONFIRMATION", "NOT_VERIFIED"].includes(i.status)) throw new BadRequestException("Status aturan tidak valid.");
     if (i.status !== "NOT_VERIFIED" && !i.durationHours) throw new BadRequestException("Aturan terverifikasi wajib memiliki durasi jam.");
+    if (i.status === "VERIFIED" && !i.sourceRef?.trim())
+      throw new BadRequestException("Aturan terverifikasi wajib mencantumkan sumber (sourceRef).");
     if (i.durationHours != null && i.durationHours <= 0) throw new BadRequestException("Durasi harus positif.");
     if (!(await this.prisma.dataRight.findUnique({ where: { code: i.rightCode } }))) throw new BadRequestException("Hak tidak dikenal.");
     return this.prisma.$transaction(async (tx) => {
+      // serialisasi per hak: dua admin menerbitkan bersamaan tidak berebut nomor versi yang sama (unique ruleKey+version)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"legal-rule:" + i.rightCode}))`;
       const prev = await tx.legalRule.findFirst({ where: { ruleKey: i.rightCode }, orderBy: { version: "desc" } });
       if (prev)
         await tx.legalRule.updateMany({ where: { ruleKey: i.rightCode, supersededAt: null }, data: { supersededAt: i.effectiveFrom } });
@@ -57,6 +62,7 @@ export class CatalogService {
           applicability: i.applicability,
           effectiveFrom: i.effectiveFrom,
           verifiedBy: i.verifiedBy,
+          sourceRef: i.sourceRef?.trim() || null,
           lastReviewedAt: new Date(),
         },
       });

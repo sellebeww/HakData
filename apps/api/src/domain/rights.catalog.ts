@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Vassel Goleyu. All rights reserved.
 // Sumber pasal: docs/legal-research.md (UU 27/2022). Teks penjelasan ditulis untuk orang awam.
+import { articleLabel, legalBasis, RECORDED_BASIS } from "./legal-refs";
 export interface FieldDef {
   key: string;
   label: string;
@@ -41,7 +42,7 @@ Pengenal akun: {{accountIdentifier}}
 adalah subjek data pribadi yang akunnya/datanya terdaftar pada layanan {{companyName}}.
 `;
 const TAIL = `
-Permohonan ini saya sampaikan secara tercatat sebagaimana dimaksud dalam Pasal 14 Undang-Undang Nomor 27 Tahun 2022 tentang Pelindungan Data Pribadi. Mohon konfirmasi penerimaan permohonan ini dan beri tahu saya apabila diperlukan informasi tambahan untuk memverifikasi identitas saya, dengan cara yang meminimalkan data yang diminta.
+Permohonan ini saya sampaikan secara tercatat sebagaimana dimaksud dalam ${RECORDED_BASIS} tentang Pelindungan Data Pribadi. Mohon konfirmasi penerimaan permohonan ini dan beri tahu saya apabila diperlukan informasi tambahan untuk memverifikasi identitas saya, dengan cara yang meminimalkan data yang diminta.
 
 Mohon tanggapan tertulis disampaikan melalui kanal yang sama. Terima kasih atas perhatian dan kerja samanya.
 
@@ -55,7 +56,7 @@ const mk = (body: string) => HEAD + body + TAIL;
 export const RIGHTS: RightDef[] = [
   {
     code: "ACCESS",
-    article: "Pasal 7 dan Pasal 32 UU 27/2022",
+    article: articleLabel("ACCESS"),
     title: "Akses & salinan data",
     sortOrder: 1,
     plainMeaning:
@@ -71,14 +72,14 @@ export const RIGHTS: RightDef[] = [
       },
     ],
     templateBody:
-      mk(`berdasarkan Pasal 7 dan Pasal 32 UU No. 27 Tahun 2022, mengajukan permohonan akses dan salinan atas data pribadi saya yang Saudara proses, beserta rekam jejak pemrosesannya.
+      mk(`berdasarkan ${legalBasis("ACCESS")}, mengajukan permohonan akses dan salinan atas data pribadi saya yang Saudara proses, beserta rekam jejak pemrosesannya.
 Cakupan yang saya minta: {{scope}}
 
 Saya juga memohon informasi mengenai tujuan pemrosesan dan pihak-pihak yang menerima data tersebut.`),
   },
   {
     code: "CORRECTION",
-    article: "Pasal 6 dan Pasal 30 UU 27/2022",
+    article: articleLabel("CORRECTION"),
     title: "Perbaikan data",
     sortOrder: 2,
     plainMeaning:
@@ -94,7 +95,7 @@ Saya juga memohon informasi mengenai tujuan pemrosesan dan pihak-pihak yang mene
       { key: "currentValue", label: "Isi saat ini (yang salah)", required: false, why: "Membantu menemukan data yang tepat." },
       { key: "correctValue", label: "Isi yang benar", required: true, why: "Nilai pengganti yang Anda minta." },
     ],
-    templateBody: mk(`berdasarkan Pasal 6 dan Pasal 30 UU No. 27 Tahun 2022, mengajukan permohonan pembaruan/perbaikan data pribadi saya.
+    templateBody: mk(`berdasarkan ${legalBasis("CORRECTION")}, mengajukan permohonan pembaruan/perbaikan data pribadi saya.
 Data yang perlu diperbaiki: {{fieldToCorrect}}
 Isi saat ini: {{currentValue}}
 Isi yang benar: {{correctValue}}
@@ -103,7 +104,7 @@ Mohon hasil pembaruan/perbaikan diberitahukan kepada saya.`),
   },
   {
     code: "WITHDRAW_CONSENT",
-    article: "Pasal 9 dan Pasal 40 UU 27/2022",
+    article: articleLabel("WITHDRAW_CONSENT"),
     title: "Tarik persetujuan",
     sortOrder: 3,
     plainMeaning:
@@ -119,14 +120,14 @@ Mohon hasil pembaruan/perbaikan diberitahukan kepada saya.`),
       },
     ],
     templateBody:
-      mk(`berdasarkan Pasal 9 dan Pasal 40 UU No. 27 Tahun 2022, menyatakan menarik kembali persetujuan pemrosesan data pribadi saya untuk:
+      mk(`berdasarkan ${legalBasis("WITHDRAW_CONSENT")}, menyatakan menarik kembali persetujuan pemrosesan data pribadi saya untuk:
 {{consentContext}}
 
 Mohon pemrosesan atas dasar persetujuan tersebut dihentikan dan hal itu dikonfirmasi kepada saya.`),
   },
   {
     code: "RESTRICT",
-    article: "Pasal 11 dan Pasal 41 UU 27/2022",
+    article: articleLabel("RESTRICT"),
     title: "Tunda / batasi pemrosesan",
     sortOrder: 4,
     plainMeaning:
@@ -149,7 +150,7 @@ Mohon pemrosesan atas dasar persetujuan tersebut dihentikan dan hal itu dikonfir
       },
     ],
     templateBody:
-      mk(`berdasarkan Pasal 11 dan Pasal 41 UU No. 27 Tahun 2022, mengajukan permohonan penundaan dan/atau pembatasan pemrosesan data pribadi saya, yaitu:
+      mk(`berdasarkan ${legalBasis("RESTRICT")}, mengajukan permohonan penundaan dan/atau pembatasan pemrosesan data pribadi saya, yaitu:
 {{restrictScope}}
 Alasan: {{restrictReason}}
 
@@ -157,7 +158,7 @@ Apabila ada bagian yang tidak dapat dipenuhi karena pengecualian dalam undang-un
   },
   {
     code: "DELETE",
-    article: "Pasal 8, 42, 43, dan 44 UU 27/2022",
+    article: articleLabel("DELETE"),
     title: "Hapus / musnahkan data",
     sortOrder: 5,
     plainMeaning:
@@ -174,15 +175,15 @@ Apabila ada bagian yang tidak dapat dipenuhi karena pengecualian dalam undang-un
       { key: "reason", label: "Alasan (opsional)", required: false, multiline: true, why: "Tidak wajib." },
     ],
     templateBody:
-      mk(`berdasarkan Pasal 8, Pasal 42, Pasal 43, dan Pasal 44 UU No. 27 Tahun 2022, mengajukan permohonan pengakhiran pemrosesan serta penghapusan/pemusnahan data pribadi saya, yaitu:
+      mk(`berdasarkan ${legalBasis("DELETE")}, mengajukan permohonan pengakhiran pemrosesan serta penghapusan/pemusnahan data pribadi saya, yaitu:
 {{deleteScope}}
 Alasan: {{reason}}
 
-Mohon penghapusan/pemusnahan diberitahukan kepada saya (Pasal 45). Apabila sebagian data harus tetap disimpan berdasarkan ketentuan peraturan perundang-undangan, mohon dijelaskan data yang dimaksud, dasar hukumnya, dan jangka waktu penyimpanannya.`),
+Mohon penghapusan/pemusnahan diberitahukan kepada saya. Apabila sebagian data harus tetap disimpan berdasarkan ketentuan peraturan perundang-undangan, mohon dijelaskan data yang dimaksud, dasar hukumnya, dan jangka waktu penyimpanannya.`),
   },
   {
     code: "OBJECT_AUTOMATED",
-    article: "Pasal 10 UU 27/2022",
+    article: articleLabel("OBJECT_AUTOMATED"),
     title: "Keberatan keputusan otomatis",
     sortOrder: 6,
     plainMeaning:
@@ -199,7 +200,7 @@ Mohon penghapusan/pemusnahan diberitahukan kepada saya (Pasal 45). Apabila sebag
       { key: "decisionDate", label: "Tanggal keputusan (opsional)", required: false, why: "Membantu perusahaan menelusuri." },
     ],
     templateBody:
-      mk(`berdasarkan Pasal 10 UU No. 27 Tahun 2022, menyatakan keberatan atas keputusan yang menurut saya hanya didasarkan pada pemrosesan secara otomatis, yaitu:
+      mk(`berdasarkan ${legalBasis("OBJECT_AUTOMATED")}, menyatakan keberatan atas keputusan yang menurut saya hanya didasarkan pada pemrosesan secara otomatis, yaitu:
 {{decisionDescription}}
 Tanggal keputusan: {{decisionDate}}
 

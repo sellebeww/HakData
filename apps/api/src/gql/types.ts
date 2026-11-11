@@ -48,6 +48,7 @@ export class LegalRuleT {
   @Field({ nullable: true }) exceptions?: string;
   @Field({ nullable: true }) applicability?: string;
   @Field({ nullable: true }) verifiedBy?: string;
+  @Field({ nullable: true, description: "Rujukan sumber hukum; wajib untuk aturan VERIFIED" }) sourceRef?: string;
   @Field(() => Date, { nullable: true }) lastReviewedAt?: Date;
   @Field(() => Date) effectiveFrom: Date;
   @Field(() => Date, { nullable: true }) supersededAt?: Date;
@@ -73,12 +74,26 @@ export class CompanyT {
   @Field({ nullable: true }) website?: string;
   @Field() isDemo: boolean;
   @Field({ nullable: true }) notes?: string;
-  @Field(() => [ChannelT]) channels: ChannelT[];
 }
 @ObjectType()
 export class CompanyPageT {
   @Field(() => [CompanyT]) items: CompanyT[];
   @Field(() => Int) total: number;
+}
+@ObjectType()
+export class PageInfoT {
+  @Field(() => String, { nullable: true }) endCursor?: string;
+  @Field() hasNextPage: boolean;
+}
+@ObjectType()
+export class CompanyEdgeT {
+  @Field() cursor: string;
+  @Field(() => CompanyT) node: CompanyT;
+}
+@ObjectType()
+export class CompanyConnectionT {
+  @Field(() => [CompanyEdgeT]) edges: CompanyEdgeT[];
+  @Field(() => PageInfoT) pageInfo: PageInfoT;
 }
 @ObjectType()
 export class SubmissionT {
@@ -145,6 +160,7 @@ export class RequestT {
   @Field(() => ChannelT, { nullable: true }) channel?: ChannelT;
   @Field(() => JSONScalar) fields: unknown;
   @Field() letterBody: string;
+  @Field() letterDisclaimer: string;
   @Field(() => Date, { nullable: true }) sentAt?: Date;
   @Field({ nullable: true }) sentVia?: string;
   @Field(() => Date, { nullable: true }) receivedAt?: Date;
@@ -184,9 +200,9 @@ export class StatsT {
   @Field() isDemoData: boolean;
   @Field() sufficient: boolean;
   @Field(() => Int) minSample: number;
-  @Field(() => Int) requestsRecorded: number;
-  @Field(() => Int) withEvidence: number;
-  @Field(() => Int) responsesRecorded: number;
+  @Field(() => Int, { nullable: true, description: "null di bawah ambang pengguna" }) requestsRecorded?: number;
+  @Field(() => Int, { nullable: true }) withEvidence?: number;
+  @Field(() => Int, { nullable: true }) responsesRecorded?: number;
   @Field({ nullable: true }) responseRatio?: number;
   @Field({ nullable: true }) medianResponseHours?: number;
   @Field() method: string;

@@ -80,9 +80,7 @@ export default function Directory() {
           </p>
           <div className="grid">
             {data!.companies.items.map((c: any) => {
-              const best = ["VERIFIED", "COMMUNITY_REPORTED", "UNVERIFIED", "OUTDATED"].find((s) =>
-                c.channels.some((x: any) => x.status === s),
-              );
+              const best = ["OFFICIAL", "COMMUNITY_VERIFIED", "UNVERIFIED"].find((s) => c.channels.some((x: any) => x.status === s));
               return (
                 <Link key={c.slug} href={`/perusahaan/${c.slug}`} className="panel">
                   <div className="row between">

@@ -1,0 +1,180 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`surat per jenis hak snapshot ACCESS 1`] = `
+"Kepada Yth.
+Pejabat/Petugas Pelindungan Data Pribadi
+PT Contoh Nusantara
+
+Perihal: Permohonan Uji Data Pribadi
+
+Dengan hormat,
+
+Saya yang bertanda tangan di bawah ini:
+Nama: isi-fullName
+Pengenal akun: isi-accountIdentifier
+
+adalah subjek data pribadi yang akunnya/datanya terdaftar pada layanan PT Contoh Nusantara.
+berdasarkan Pasal 32 UU No. 27 Tahun 2022, mengajukan permohonan akses dan salinan atas data pribadi saya yang Saudara proses, beserta rekam jejak pemrosesannya.
+Cakupan yang saya minta: isi-scope
+
+Saya juga memohon informasi mengenai tujuan pemrosesan dan pihak-pihak yang menerima data tersebut.
+Permohonan ini saya sampaikan secara tercatat sebagaimana dimaksud dalam Pasal 14 UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi. Mohon konfirmasi penerimaan permohonan ini dan beri tahu saya apabila diperlukan informasi tambahan untuk memverifikasi identitas saya, dengan cara yang meminimalkan data yang diminta.
+
+Mohon tanggapan tertulis disampaikan melalui kanal yang sama. Terima kasih atas perhatian dan kerja samanya.
+
+isi-city, 11 November 2026
+Hormat saya,
+
+isi-fullName
+"
+`;
+
+exports[`surat per jenis hak snapshot CORRECTION 1`] = `
+"Kepada Yth.
+Pejabat/Petugas Pelindungan Data Pribadi
+PT Contoh Nusantara
+
+Perihal: Permohonan Uji Data Pribadi
+
+Dengan hormat,
+
+Saya yang bertanda tangan di bawah ini:
+Nama: isi-fullName
+Pengenal akun: isi-accountIdentifier
+
+adalah subjek data pribadi yang akunnya/datanya terdaftar pada layanan PT Contoh Nusantara.
+berdasarkan Pasal 30 UU No. 27 Tahun 2022, mengajukan permohonan pembaruan/perbaikan data pribadi saya.
+Data yang perlu diperbaiki: isi-fieldToCorrect
+Isi saat ini: isi-currentValue
+Isi yang benar: isi-correctValue
+
+Mohon hasil pembaruan/perbaikan diberitahukan kepada saya.
+Permohonan ini saya sampaikan secara tercatat sebagaimana dimaksud dalam Pasal 14 UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi. Mohon konfirmasi penerimaan permohonan ini dan beri tahu saya apabila diperlukan informasi tambahan untuk memverifikasi identitas saya, dengan cara yang meminimalkan data yang diminta.
+
+Mohon tanggapan tertulis disampaikan melalui kanal yang sama. Terima kasih atas perhatian dan kerja samanya.
+
+isi-city, 11 November 2026
+Hormat saya,
+
+isi-fullName
+"
+`;
+
+exports[`surat per jenis hak snapshot DELETE 1`] = `
+"Kepada Yth.
+Pejabat/Petugas Pelindungan Data Pribadi
+PT Contoh Nusantara
+
+Perihal: Permohonan Uji Data Pribadi
+
+Dengan hormat,
+
+Saya yang bertanda tangan di bawah ini:
+Nama: isi-fullName
+Pengenal akun: isi-accountIdentifier
+
+adalah subjek data pribadi yang akunnya/datanya terdaftar pada layanan PT Contoh Nusantara.
+berdasarkan Pasal 43, Pasal 44, dan Pasal 45 UU No. 27 Tahun 2022, mengajukan permohonan pengakhiran pemrosesan serta penghapusan/pemusnahan data pribadi saya, yaitu:
+isi-deleteScope
+Alasan: isi-reason
+
+Mohon penghapusan/pemusnahan diberitahukan kepada saya. Apabila sebagian data harus tetap disimpan berdasarkan ketentuan peraturan perundang-undangan, mohon dijelaskan data yang dimaksud, dasar hukumnya, dan jangka waktu penyimpanannya.
+Permohonan ini saya sampaikan secara tercatat sebagaimana dimaksud dalam Pasal 14 UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi. Mohon konfirmasi penerimaan permohonan ini dan beri tahu saya apabila diperlukan informasi tambahan untuk memverifikasi identitas saya, dengan cara yang meminimalkan data yang diminta.
+
+Mohon tanggapan tertulis disampaikan melalui kanal yang sama. Terima kasih atas perhatian dan kerja samanya.
+
+isi-city, 11 November 2026
+Hormat saya,
+
+isi-fullName
+"
+`;
+
+exports[`surat per jenis hak snapshot OBJECT_AUTOMATED 1`] = `
+"Kepada Yth.
+Pejabat/Petugas Pelindungan Data Pribadi
+PT Contoh Nusantara
+
+Perihal: Permohonan Uji Data Pribadi
+
+Dengan hormat,
+
+Saya yang bertanda tangan di bawah ini:
+Nama: isi-fullName
+Pengenal akun: isi-accountIdentifier
+
+adalah subjek data pribadi yang akunnya/datanya terdaftar pada layanan PT Contoh Nusantara.
+berdasarkan UU No. 27 Tahun 2022, menyatakan keberatan atas keputusan yang menurut saya hanya didasarkan pada pemrosesan secara otomatis, yaitu:
+isi-decisionDescription
+Tanggal keputusan: isi-decisionDate
+
+Mohon penjelasan mengenai dasar keputusan tersebut dan kemungkinan peninjauan oleh petugas manusia.
+Permohonan ini saya sampaikan secara tercatat sebagaimana dimaksud dalam Pasal 14 UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi. Mohon konfirmasi penerimaan permohonan ini dan beri tahu saya apabila diperlukan informasi tambahan untuk memverifikasi identitas saya, dengan cara yang meminimalkan data yang diminta.
+
+Mohon tanggapan tertulis disampaikan melalui kanal yang sama. Terima kasih atas perhatian dan kerja samanya.
+
+isi-city, 11 November 2026
+Hormat saya,
+
+isi-fullName
+"
+`;
+
+exports[`surat per jenis hak snapshot RESTRICT 1`] = `
+"Kepada Yth.
+Pejabat/Petugas Pelindungan Data Pribadi
+PT Contoh Nusantara
+
+Perihal: Permohonan Uji Data Pribadi
+
+Dengan hormat,
+
+Saya yang bertanda tangan di bawah ini:
+Nama: isi-fullName
+Pengenal akun: isi-accountIdentifier
+
+adalah subjek data pribadi yang akunnya/datanya terdaftar pada layanan PT Contoh Nusantara.
+berdasarkan Pasal 41 UU No. 27 Tahun 2022, mengajukan permohonan penundaan dan/atau pembatasan pemrosesan data pribadi saya, yaitu:
+isi-restrictScope
+Alasan: isi-restrictReason
+
+Apabila ada bagian yang tidak dapat dipenuhi karena pengecualian dalam undang-undang, mohon dijelaskan secara tertulis bagian dan dasar hukumnya.
+Permohonan ini saya sampaikan secara tercatat sebagaimana dimaksud dalam Pasal 14 UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi. Mohon konfirmasi penerimaan permohonan ini dan beri tahu saya apabila diperlukan informasi tambahan untuk memverifikasi identitas saya, dengan cara yang meminimalkan data yang diminta.
+
+Mohon tanggapan tertulis disampaikan melalui kanal yang sama. Terima kasih atas perhatian dan kerja samanya.
+
+isi-city, 11 November 2026
+Hormat saya,
+
+isi-fullName
+"
+`;
+
+exports[`surat per jenis hak snapshot WITHDRAW_CONSENT 1`] = `
+"Kepada Yth.
+Pejabat/Petugas Pelindungan Data Pribadi
+PT Contoh Nusantara
+
+Perihal: Permohonan Uji Data Pribadi
+
+Dengan hormat,
+
+Saya yang bertanda tangan di bawah ini:
+Nama: isi-fullName
+Pengenal akun: isi-accountIdentifier
+
+adalah subjek data pribadi yang akunnya/datanya terdaftar pada layanan PT Contoh Nusantara.
+berdasarkan Pasal 40 UU No. 27 Tahun 2022, menyatakan menarik kembali persetujuan pemrosesan data pribadi saya untuk:
+isi-consentContext
+
+Mohon pemrosesan atas dasar persetujuan tersebut dihentikan dan hal itu dikonfirmasi kepada saya.
+Permohonan ini saya sampaikan secara tercatat sebagaimana dimaksud dalam Pasal 14 UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi. Mohon konfirmasi penerimaan permohonan ini dan beri tahu saya apabila diperlukan informasi tambahan untuk memverifikasi identitas saya, dengan cara yang meminimalkan data yang diminta.
+
+Mohon tanggapan tertulis disampaikan melalui kanal yang sama. Terima kasih atas perhatian dan kerja samanya.
+
+isi-city, 11 November 2026
+Hormat saya,
+
+isi-fullName
+"
+`;

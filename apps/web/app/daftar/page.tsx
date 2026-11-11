@@ -1,18 +1,15 @@
 // Copyright (c) 2026 Vassel Goleyu. All rights reserved.
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { gql } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
 import { Button, Field } from "@/components/ui";
 
 export default function Register() {
-  const r = useRouter();
-  const { refresh } = useAuth();
   const [f, setF] = useState({ name: "", email: "", password: "" });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
   const go = async (ev: React.FormEvent) => {
     ev.preventDefault();
     setBusy(true);
@@ -23,8 +20,7 @@ export default function Register() {
         p: f.password,
         n: f.name,
       });
-      await refresh();
-      r.push("/app");
+      setSent(true); // akun belum aktif sampai email diverifikasi; tidak ada sesi
     } catch (x) {
       setErr((x as Error).message);
     } finally {
@@ -32,6 +28,18 @@ export default function Register() {
     }
   };
   const set = (k: string) => (x: any) => setF({ ...f, [k]: x.target.value });
+  if (sent)
+    return (
+      <div className="page narrow">
+        <h1>Cek email Anda</h1>
+        <div className="panel">
+          <p>
+            Kami mengirim tautan verifikasi ke <strong>{f.email}</strong> (berlaku 24 jam). Buka tautan itu, lalu{" "}
+            <Link href="/masuk">masuk</Link>.
+          </p>
+        </div>
+      </div>
+    );
   return (
     <div className="page narrow">
       <h1>Buat akun</h1>

@@ -16,34 +16,41 @@ export const median = (xs: number[]) => {
 @Injectable()
 export class StatsService {
   constructor(private prisma: PrismaService) {}
-  /** Hanya agregat tanpa identitas. Di bawah ambang sampel, angka rasio/median TIDAK ditampilkan (cegah re-identifikasi & statistik menyesatkan). */
+  /**
+   * Hanya agregat tanpa identitas, dan hanya dari pengiriman TERVERIFIKASI: surat yang dikirim lewat email platform (ada EmailDelivery
+   * REQUEST, waktu dan tujuan dicatat sistem, bukan diketik pengguna). Ambang k dihitung dari jumlah PENGGUNA berbeda, bukan jumlah permintaan,
+   * sehingga satu akun tidak bisa mencapai ambang sendirian atau meracuni statistik. Di bawah ambang, tidak ada angka apa pun yang dikembalikan.
+   */
   async forCompany(slug: string) {
     const c = await this.prisma.company.findUnique({ where: { slug } });
     if (!c) throw new NotFoundException("Perusahaan tidak ditemukan.");
     const reqs = await this.prisma.privacyRequest.findMany({
-      where: { companyId: c.id, deletedAt: null, sentAt: { not: null } },
+      where: { companyId: c.id, deletedAt: null, sentAt: { not: null }, emailDeliveries: { some: { kind: "REQUEST" } } },
       select: {
+        userId: true,
         sentAt: true,
         evidence: { select: { id: true }, take: 1 },
-        responses: { select: { receivedAt: true }, orderBy: { receivedAt: "asc" }, take: 1 },
+        // NO_RESPONSE adalah catatan "tidak ada balasan", bukan balasan
+        responses: { where: { category: { not: "NO_RESPONSE" } }, select: { receivedAt: true }, orderBy: { receivedAt: "asc" }, take: 1 },
       },
     });
     const n = reqs.length;
+    const users = new Set(reqs.map((r) => r.userId)).size;
     const responded = reqs.filter((r) => r.responses.length);
-    const sufficient = n >= config.minStatSample;
+    const sufficient = users >= config.minStatSample;
     const hours = responded.map((r) => (r.responses[0].receivedAt.getTime() - r.sentAt!.getTime()) / 3_600_000);
+    const show = <T>(v: T) => (sufficient ? v : undefined);
     return {
       companySlug: slug,
       isDemoData: c.isDemo,
       sufficient,
       minSample: config.minStatSample,
-      requestsRecorded: n,
-      withEvidence: reqs.filter((r) => r.evidence.length).length,
-      responsesRecorded: responded.length,
-      responseRatio: sufficient ? responded.length / n : undefined,
+      requestsRecorded: show(n),
+      withEvidence: show(reqs.filter((r) => r.evidence.length).length),
+      responsesRecorded: show(responded.length),
+      responseRatio: show(n ? responded.length / n : undefined),
       medianResponseHours: sufficient && responded.length >= 3 ? Math.round((median(hours) ?? 0) * 10) / 10 : undefined,
-      method:
-        "Rasio = permintaan dengan minimal satu respons tercatat / permintaan yang sudah dikirim. Median = selisih jam dari pengiriman ke respons pertama, minimal 3 respons. Seluruh angka dicatat sendiri oleh pengguna.",
+      method: `Hanya permintaan yang dikirim lewat email platform (waktu dan tujuan dicatat sistem), dan hanya ditampilkan bila berasal dari minimal ${config.minStatSample} pengguna berbeda. Rasio = permintaan dengan minimal satu balasan tercatat (kategori "tidak ada respons" tidak dihitung) / permintaan terkirim. Median = selisih jam dari pengiriman ke balasan pertama, minimal 3 balasan. Isi balasan dicatat pengguna.`,
       label: c.isDemo
         ? "DATA DEMO. Bukan data nyata."
         : "Data dicatat pengguna Hak Data, belum diverifikasi independen. Bukan peringkat dan bukan penilaian kepatuhan hukum.",

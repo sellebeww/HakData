@@ -24,6 +24,7 @@ export function SiteHeader() {
       <nav aria-label="Utama">
         <Link href="/perusahaan">Direktori</Link>
         <Link href="/hak">Hak kamu</Link>
+        <Link href="/statistik">Statistik</Link>
         <Link href="/tentang">Tentang</Link>
         {me ? (
           <>

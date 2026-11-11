@@ -9,6 +9,7 @@ import depthLimit from "graphql-depth-limit";
 import { GraphQLError } from "graphql";
 import { PrismaModule } from "./prisma.service";
 import { AuditModule } from "./common/audit";
+import { MailModule } from "./common/mailer";
 import { AuthGuard } from "./common/auth";
 import { config } from "./common/config";
 import { AuthModule } from "./auth/auth.module";
@@ -23,8 +24,9 @@ import { LettersModule } from "./letters/letters.module";
 import { DeadlinesModule } from "./deadlines/deadlines.module";
 import { DossierModule } from "./dossier/dossier.module";
 import { EvidenceModule } from "./evidence/evidence.module";
+import { SimulationModule } from "./simulation/simulation.module";
 
-const MAX_DEPTH = 8,
+export const MAX_DEPTH = 8,
   MAX_COMPLEXITY = 300;
 const log = new Logger("GraphQL");
 const complexityPlugin = {
@@ -64,8 +66,9 @@ class GqlThrottlerGuard extends ThrottlerGuard {
       context: ({ req, res }: any) => ({ req, res }),
       validationRules: [depthLimit(MAX_DEPTH)],
       plugins: [complexityPlugin as never],
-      formatError: (e: any) => {
-        const status: number | undefined = e.extensions?.originalError?.statusCode ?? e.extensions?.http?.status;
+      formatError: (e: any, raw: any) => {
+        const status: number | undefined =
+          e.extensions?.originalError?.statusCode ?? e.extensions?.http?.status ?? raw?.originalError?.getStatus?.(); // ThrottlerException membawa status hanya lewat getStatus()
         const CODES: Record<number, string> = {
           400: "BAD_USER_INPUT",
           401: "UNAUTHENTICATED",
@@ -74,6 +77,8 @@ class GqlThrottlerGuard extends ThrottlerGuard {
           429: "TOO_MANY_REQUESTS",
         };
         if (status && status < 500) {
+          if (status === 429)
+            return { message: "Terlalu banyak permintaan. Coba lagi sebentar lagi.", extensions: { code: "TOO_MANY_REQUESTS" } };
           const m = e.extensions?.originalError?.message;
           return { message: Array.isArray(m) ? m.join(", ") : e.message, extensions: { code: CODES[status] ?? "BAD_USER_INPUT" } };
         }
@@ -91,6 +96,7 @@ class GqlThrottlerGuard extends ThrottlerGuard {
     }),
     PrismaModule,
     AuditModule,
+    MailModule,
     AuthModule,
     CatalogModule,
     CompaniesModule,
@@ -103,6 +109,7 @@ class GqlThrottlerGuard extends ThrottlerGuard {
     DeadlinesModule,
     DossierModule,
     EvidenceModule,
+    SimulationModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: GqlThrottlerGuard },

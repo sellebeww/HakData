@@ -1,12 +1,13 @@
 // Copyright (c) 2026 Vassel Goleyu. All rights reserved.
 "use client";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { gql } from "@/lib/api";
 import { CHANNEL_TYPE, VERIFY } from "@/lib/format";
 import { Badge, Button, Field, Skeleton, useToast } from "@/components/ui";
 
-const STEPS = ["Perusahaan", "Jenis hak", "Isi data", "Tinjau surat"];
+const STEPS = ["Perusahaan", "Jenis hak", "Isi data", "Tinjau surat", "Kirim"];
 const REQ_FIELDS = `id status letterBody fields rightCode right{code title fields{key label required why multiline}} company{id slug name channels{id type value status}} channel{id}`;
 
 function Wizard() {
@@ -112,10 +113,23 @@ function Wizard() {
       if (letter !== req.letterBody)
         await gql(`mutation($i:String!,$b:String!){updateLetter(id:$i,body:$b){id}}`, { i: req.id, b: letter });
       await gql(`mutation($i:String!){reviewRequest(id:$i){id}}`, { i: req.id });
-      toast("Surat disetujui. Sekarang kirim lewat kanal pilihanmu, lalu catat pengirimannya.");
+      toast("Surat disetujui.");
+      setStep(4);
+    });
+  const sendEmail = () =>
+    run(async () => {
+      await gql(`mutation($i:String!){sendRequestEmail(id:$i){id}}`, { i: req.id });
+      toast("Email terkirim dan pengirimannya dicatat.");
       router.push(`/app/permintaan/${req.id}`);
     });
 
+  // sama dengan pilihan server (sendByEmail): kanal terpilih, atau email privasi dengan status verifikasi tertinggi
+  const RANK: Record<string, number> = { OFFICIAL: 2, COMMUNITY_VERIFIED: 1, UNVERIFIED: 0 };
+  const emailChannel = (req?.company.channels ?? [])
+    .filter(
+      (c: any) => (req.channel ? c.id === req.channel.id : c.type === "PRIVACY_EMAIL") && ["PRIVACY_EMAIL", "DPO_EMAIL"].includes(c.type),
+    )
+    .sort((a: any, b: any) => RANK[b.status] - RANK[a.status])[0];
   const sendable = company?.channels.filter((c: any) => c.type !== "PRIVACY_POLICY_URL") ?? [];
   return (
     <div className="page">
@@ -256,7 +270,30 @@ function Wizard() {
           </div>
         </section>
       )}
-      {!req && step === 3 && <Skeleton h={300} />}
+      {step === 4 && req && (
+        <section className="panel">
+          <h2>Kirim permintaan</h2>
+          {emailChannel ? (
+            <>
+              <p>
+                Hak Data dapat mengirim surat ini ke <strong>{emailChannel.value}</strong> ({VERIFY[emailChannel.status]?.label}). Balasan
+                akan masuk ke emailmu. Setelah terkirim, surat tidak dapat diubah dan estimasi tenggat mulai dihitung.
+              </p>
+              <Button loading={busy} onClick={sendEmail}>
+                Kirim lewat email sekarang
+              </Button>
+            </>
+          ) : (
+            <p className="note">Perusahaan ini tidak punya kanal email. Kirim lewat kanal lain, lalu catat pengirimannya.</p>
+          )}
+          <p style={{ marginTop: 16 }}>
+            <Link className="btn btn-ghost" href={`/app/permintaan/${req.id}`}>
+              Saya kirim sendiri (catat manual)
+            </Link>
+          </p>
+        </section>
+      )}
+      {!req && step >= 3 && <Skeleton h={300} />}
     </div>
   );
 }

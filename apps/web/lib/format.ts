@@ -7,6 +7,8 @@ export const REQUEST_STATUS: Record<string, string> = {
   DRAFT: "Draf",
   REVIEWED: "Siap dikirim",
   SENT: "Terkirim",
+  OVERDUE: "Lewat estimasi tenggat",
+  ESCALATED: "Dieskalasi",
   RESPONDED: "Ada respons",
   COMPLETED: "Selesai",
   CLOSED: "Ditutup",
@@ -20,10 +22,9 @@ export const DEADLINE_STATUS: Record<string, { label: string; tone: string }> = 
   COMPLETED: { label: "Selesai", tone: "ok" },
 };
 export const VERIFY: Record<string, { label: string; tone: string }> = {
-  VERIFIED: { label: "Terverifikasi", tone: "ok" },
-  COMMUNITY_REPORTED: { label: "Laporan komunitas", tone: "info" },
+  OFFICIAL: { label: "Resmi", tone: "ok" },
+  COMMUNITY_VERIFIED: { label: "Diverifikasi komunitas", tone: "info" },
   UNVERIFIED: { label: "Belum terverifikasi", tone: "muted" },
-  OUTDATED: { label: "Kedaluwarsa", tone: "warn" },
 };
 export const CHANNEL_TYPE: Record<string, string> = {
   PRIVACY_EMAIL: "Email privasi",
@@ -49,3 +50,10 @@ export const EVIDENCE_SRC: Record<string, string> = {
   DISPUTED: "Dipersengketakan",
 };
 export const toLocalInput = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+/** Durasi ms -> "2j 05m 03d" (jam, menit, detik); cocok untuk waktu demo yang dipercepat. */
+export const fmtDuration = (ms: number) => {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 3600)}j ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m ${String(s % 60).padStart(2, "0")}d`;
+};
+export const statusTone = (s: string) =>
+  ({ COMPLETED: "ok", RESPONDED: "ok", OVERDUE: "danger", ESCALATED: "warn", CLOSED: "muted" })[s] ?? "info";

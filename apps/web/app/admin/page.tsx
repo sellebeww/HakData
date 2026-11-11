@@ -72,7 +72,7 @@ function Companies({ admin }: { admin: boolean }) {
     }
   };
   const sts = Object.entries(VERIFY)
-    .filter(([k]) => admin || k !== "VERIFIED")
+    .filter(([k]) => admin || k !== "OFFICIAL")
     .map(([k, v]) => [k, v.label] as [string, string]);
   return (
     <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))" }}>
@@ -98,7 +98,7 @@ function Companies({ admin }: { admin: boolean }) {
       <section className="panel">
         <h2>Tambah/ubah kanal</h2>
         <p className="note">
-          Jangan pernah mengarang alamat. Isi hanya dari sumber yang bisa dibuka.{!admin && " Status VERIFIED hanya untuk admin."}
+          Jangan pernah mengarang alamat. Isi hanya dari sumber yang bisa dibuka.{!admin && " Status OFFICIAL hanya untuk admin."}
         </p>
         <Field
           label="Perusahaan"

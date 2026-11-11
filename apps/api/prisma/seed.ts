@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Vassel Goleyu. All rights reserved.
 // Seed idempoten. SEMUA perusahaan di sini adalah DEMO fiktif (alamat memakai TLD .example yang dicadangkan RFC 2606). Tidak ada data perusahaan nyata.
 import { PrismaClient } from "@prisma/client";
-import * as bcrypt from "bcryptjs";
+import { hashPassword } from "../src/common/password";
 import { RIGHTS } from "../src/domain/rights.catalog";
 
 const prisma = new PrismaClient();
@@ -30,6 +30,9 @@ const RULES: Record<string, { hours: number | null; basis: string; exc?: string;
   OBJECT_AUTOMATED: { hours: null, basis: "UU 27/2022 Pasal 10: tata cara menunggu Peraturan Pemerintah" },
 };
 
+// Perilaku mode demo (DEMO_MODE=true): toko membalas tepat waktu, dompet membalas terlambat, seluler diam (lalu OVERDUE -> eskalasi).
+const SIMULATION = { "demo-toko-contoh": "REPLIES", "demo-dompet-contoh": "REPLIES_LATE", "demo-seluler-contoh": "SILENT" } as const;
+
 const COMPANIES = [
   {
     slug: "demo-toko-contoh",
@@ -38,11 +41,11 @@ const COMPANIES = [
     industry: "E-commerce",
     website: "https://toko-contoh.example",
     channels: [
-      { type: "PRIVACY_EMAIL", value: "privacy@toko-contoh.example", status: "VERIFIED", sourceUrl: "https://toko-contoh.example/privasi" },
+      { type: "PRIVACY_EMAIL", value: "privacy@toko-contoh.example", status: "OFFICIAL", sourceUrl: "https://toko-contoh.example/privasi" },
       {
         type: "PRIVACY_POLICY_URL",
         value: "https://toko-contoh.example/privasi",
-        status: "VERIFIED",
+        status: "OFFICIAL",
         sourceUrl: "https://toko-contoh.example/privasi",
       },
     ],
@@ -57,7 +60,7 @@ const COMPANIES = [
       {
         type: "DPO_EMAIL",
         value: "dpo@dompet-contoh.example",
-        status: "COMMUNITY_REPORTED",
+        status: "COMMUNITY_VERIFIED",
         sourceUrl: "https://dompet-contoh.example/kebijakan",
       },
       { type: "REQUEST_FORM", value: "https://dompet-contoh.example/permintaan-data", status: "UNVERIFIED" },
@@ -73,7 +76,7 @@ const COMPANIES = [
       {
         type: "PRIVACY_EMAIL",
         value: "privasi@seluler-contoh.example",
-        status: "OUTDATED",
+        status: "UNVERIFIED",
         sourceUrl: "https://seluler-contoh.example/privasi",
       },
     ],
@@ -116,6 +119,8 @@ async function main() {
         status: rule.hours ? "VERIFIED" : "NOT_VERIFIED",
         exceptions: rule.exc,
         verifiedBy: V,
+        // aturan VERIFIED wajib punya sumber (CHECK lr_verified_chk); NOT_VERIFIED tidak mengklaim sumber
+        sourceRef: rule.hours ? rule.basis : null,
         lastReviewedAt: new Date("2026-11-11"),
         effectiveFrom: EFFECTIVE,
       },
@@ -132,9 +137,10 @@ async function main() {
         industry: c.industry,
         website: c.website,
         isDemo: true,
+        simulation: SIMULATION[c.slug as keyof typeof SIMULATION],
         notes: "DATA DEMO fiktif untuk demonstrasi.",
       },
-      update: {},
+      update: { simulation: SIMULATION[c.slug as keyof typeof SIMULATION] },
     });
     for (const ch of c.channels)
       await prisma.privacyChannel.upsert({
@@ -151,13 +157,17 @@ async function main() {
         update: {},
       });
   }
-  const hash = await bcrypt.hash(DEMO_PASSWORD, 12);
+  const hash = await hashPassword(DEMO_PASSWORD);
   for (const [email, name, role] of [
     ["admin@hakdata.demo", "Admin Demo", "ADMIN"],
     ["moderator@hakdata.demo", "Moderator Demo", "MODERATOR"],
     ["user@hakdata.demo", "Pengguna Demo", "USER"],
   ] as const)
-    await prisma.user.upsert({ where: { email }, create: { email, name, role, passwordHash: hash }, update: {} });
+    await prisma.user.upsert({
+      where: { email },
+      create: { email, name, role, passwordHash: hash, emailVerifiedAt: new Date() },
+      update: {},
+    });
 
   // Agregat demo: 12 permintaan SIMULASI pada perusahaan DEMO agar statistik dapat didemokan (di atas ambang sampel). Berlabel DATA DEMO di API/UI.
   const toko = await prisma.company.findUniqueOrThrow({ where: { slug: "demo-toko-contoh" } });
@@ -165,7 +175,7 @@ async function main() {
     for (let i = 0; i < 12; i++) {
       const u = await prisma.user.upsert({
         where: { email: `sim${i}@hakdata.demo` },
-        create: { email: `sim${i}@hakdata.demo`, name: `Simulasi ${i}`, passwordHash: hash },
+        create: { email: `sim${i}@hakdata.demo`, name: `Simulasi ${i}`, passwordHash: hash, emailVerifiedAt: new Date() },
         update: {},
       });
       const sentAt = new Date(Date.now() - (20 + i) * 864e5);
@@ -198,6 +208,21 @@ async function main() {
         });
     }
   }
+  // Statistik hanya menghitung pengiriman lewat email platform: beri bukti kirim DEMO pada permintaan simulasi (idempoten, juga untuk DB lama).
+  for (const r of await prisma.privacyRequest.findMany({
+    where: { companyId: toko.id, title: "DEMO simulasi", emailDeliveries: { none: {} } },
+  }))
+    await prisma.emailDelivery.create({
+      data: {
+        requestId: r.id,
+        kind: "REQUEST",
+        toAddress: "privacy@toko-contoh.example",
+        subject: "DEMO simulasi",
+        messageId: `<demo-${r.id}@hakdata.local>`,
+        contentSha256: "0".repeat(64),
+        sentAt: r.sentAt!,
+      },
+    });
   console.log("Seed selesai");
 }
 main().finally(() => prisma.$disconnect());

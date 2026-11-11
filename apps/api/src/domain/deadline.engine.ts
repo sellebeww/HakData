@@ -16,7 +16,7 @@ export interface RuleLike {
 }
 
 const HOUR = 3_600_000;
-export const APPROACHING_WINDOW_HOURS = 24; // pengingat "menjelang tenggat"; dapat dijadikan konfigurasi
+export const APPROACHING_WINDOW_HOURS = 24; // default murni; nilai runtime dari REMINDER_APPROACHING_HOURS (deadlines/deadline.clock.ts)
 
 /** Pilih aturan yang berlaku pada waktu `at`: versi tertinggi yang sudah efektif dan belum digantikan. */
 export function selectRule<T extends RuleLike>(rules: T[], rightCode: string, at: Date): T | undefined {
@@ -26,27 +26,38 @@ export function selectRule<T extends RuleLike>(rules: T[], rightCode: string, at
 }
 
 /** Hitung target waktu. Aturan tanpa durasi atau BELUM TERVERIFIKASI tidak menghasilkan hitung mundur. */
-export function computeDueAt(rule: Pick<RuleLike, "durationHours" | "calcMethod" | "status">, startedAt: Date): Date | null {
+export function computeDueAt(rule: Pick<RuleLike, "durationHours" | "calcMethod" | "status">, startedAt: Date, scale = 1): Date | null {
   if (rule.status === "NOT_VERIFIED" || rule.durationHours == null) return null;
   if (rule.calcMethod !== "CALENDAR_HOURS") throw new Error(`calcMethod tidak didukung: ${rule.calcMethod}`);
-  return new Date(startedAt.getTime() + rule.durationHours * HOUR);
+  return new Date(startedAt.getTime() + Math.round((rule.durationHours * HOUR) / scale)); // scale > 1 hanya untuk demo
 }
 
-export function deadlineStatus(d: { dueAt: Date | null; completedAt: Date | null; ruleStatus: RuleStatus }, now: Date): DeadlineStatus {
+export function deadlineStatus(
+  d: { dueAt: Date | null; completedAt: Date | null; ruleStatus: RuleStatus },
+  now: Date,
+  approachingMs = APPROACHING_WINDOW_HOURS * HOUR,
+): DeadlineStatus {
   if (d.completedAt) return "COMPLETED";
   if (d.dueAt == null || d.ruleStatus === "NOT_VERIFIED") return "RULE_NOT_VERIFIED";
   if (d.ruleStatus === "NEEDS_CONFIRMATION") return "NEEDS_CONFIRMATION";
   const left = d.dueAt.getTime() - now.getTime();
   if (left <= 0) return "DEADLINE_PASSED";
-  return left <= APPROACHING_WINDOW_HOURS * HOUR ? "APPROACHING_DEADLINE" : "COUNTDOWN_ACTIVE";
+  return left <= approachingMs ? "APPROACHING_DEADLINE" : "COUNTDOWN_ACTIVE";
 }
 
 export type ReminderPlan = { kind: "APPROACHING" | "PASSED" | "FOLLOW_UP"; fireAt: Date };
-/** Jadwal pengingat. FOLLOW_UP adalah pengingat pribadi, bukan tenggat hukum. */
-export function planReminders(sentAt: Date, dueAt: Date | null, followUpDays: number): ReminderPlan[] {
-  const plans: ReminderPlan[] = [{ kind: "FOLLOW_UP", fireAt: new Date(sentAt.getTime() + followUpDays * 24 * HOUR) }];
+/** Jadwal pengingat. FOLLOW_UP adalah pengingat pribadi, bukan tenggat hukum. `scale` > 1 hanya untuk demo. */
+export function planReminders(
+  sentAt: Date,
+  dueAt: Date | null,
+  followUpDays: number,
+  o: { scale?: number; approachingHours?: number } = {},
+): ReminderPlan[] {
+  const { scale = 1, approachingHours = APPROACHING_WINDOW_HOURS } = o;
+  const at = (from: Date, ms: number) => new Date(from.getTime() + Math.round(ms / scale));
+  const plans: ReminderPlan[] = [{ kind: "FOLLOW_UP", fireAt: at(sentAt, followUpDays * 24 * HOUR) }];
   if (dueAt) {
-    const approaching = new Date(dueAt.getTime() - APPROACHING_WINDOW_HOURS * HOUR);
+    const approaching = new Date(dueAt.getTime() - Math.round((approachingHours * HOUR) / scale));
     plans.push({ kind: "APPROACHING", fireAt: approaching > sentAt ? approaching : sentAt });
     plans.push({ kind: "PASSED", fireAt: dueAt });
   }

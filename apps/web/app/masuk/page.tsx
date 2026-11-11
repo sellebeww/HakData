@@ -14,16 +14,20 @@ export default function Login() {
   const [p, setP] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [needsVerify, setNeedsVerify] = useState(false);
+  const [resent, setResent] = useState(false);
   const go = async (ev: React.FormEvent) => {
     ev.preventDefault();
     setBusy(true);
     setErr("");
+    setNeedsVerify(false);
     try {
       await gql(`mutation($e:String!,$p:String!){login(email:$e,password:$p){id}}`, { e, p });
       await refresh();
       r.push("/app");
     } catch (x) {
       setErr((x as Error).message);
+      setNeedsVerify((x as { code?: string }).code === "FORBIDDEN"); // email belum diverifikasi
     } finally {
       setBusy(false);
     }
@@ -45,6 +49,17 @@ export default function Login() {
         <Button type="submit" loading={busy}>
           Masuk
         </Button>
+        {needsVerify && (
+          <Button
+            type="button"
+            onClick={async () => {
+              await gql(`mutation($e:String!){resendVerification(email:$e)}`, { e }).catch(() => {});
+              setResent(true);
+            }}
+          >
+            {resent ? "Tautan dikirim, cek email Anda" : "Kirim ulang tautan verifikasi"}
+          </Button>
+        )}
         <p className="muted">
           Belum punya akun? <Link href="/daftar">Daftar</Link>
         </p>

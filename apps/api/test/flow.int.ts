@@ -32,8 +32,12 @@ const login = async (email: string, password = PW) => {
 };
 const signup = async () => {
   const c = client();
-  const r = await c.q(`mutation($e:String!,$p:String!){register(email:$e,password:$p,name:"Uji"){id}}`, { e: `u${rid()}@test.dev`, p: PW });
+  const email = `u${rid()}@test.dev`;
+  const r = await c.q(`mutation($e:String!,$p:String!){register(email:$e,password:$p,name:"Uji"){id}}`, { e: email, p: PW });
   expect(r.errors).toBeUndefined();
+  // register tidak membuat sesi; alur verifikasi sebenarnya diuji di auth.int.ts, di sini dipercepat lewat DB
+  await prisma.user.update({ where: { id: r.data.register.id }, data: { emailVerifiedAt: new Date() } });
+  expect((await c.q(`mutation($e:String!,$p:String!){login(email:$e,password:$p){id}}`, { e: email, p: PW })).errors).toBeUndefined();
   return { ...c, id: r.data.register.id as string };
 };
 const REQ = `id status letterBody fields deadline{status dueAt ruleVersion basisNote ruleStatus disclaimer} timeline{type verification} evidence{id sha256} responses{category}`;
@@ -63,7 +67,7 @@ describe("alur inti pengguna", () => {
     expect(r.data.companies.total).toBe(1);
     const c = r.data.companies.items[0];
     expect(c.isDemo).toBe(true);
-    expect(c.channels.map((x: any) => x.status)).toContain("VERIFIED");
+    expect(c.channels.map((x: any) => x.status)).toContain("OFFICIAL");
     companyId = c.id;
     slug = c.slug;
     channelId = c.channels.find((x: any) => x.type === "PRIVACY_EMAIL").id;
@@ -119,13 +123,15 @@ describe("alur inti pengguna", () => {
     const notes = async () => (await u.q(`{notifications{type}}`)).data.notifications.map((n: any) => n.type) as string[];
     for (let i = 0; i < 40 && !(await notes()).includes("REMINDER_PASSED"); i++) await new Promise((r) => setTimeout(r, 250));
     const types = await notes();
-    expect(types).toEqual(expect.arrayContaining(["REQUEST_RECORDED", "REMINDER_APPROACHING", "REMINDER_PASSED"]));
+    // tenggat sudah lewat 8 jam: pengingat "menjelang" tidak relevan lagi bagi permintaan OVERDUE (urutan penerimaan tidak dijamin)
+    expect(types).toEqual(expect.arrayContaining(["REQUEST_RECORDED", "REMINDER_PASSED"]));
     expect(types).not.toContain("REMINDER_FOLLOW_UP");
-    const rem = await prisma.scheduledReminder.findFirstOrThrow({ where: { requestId: reqId, kind: "PASSED" } });
-    await reminders.handle(rem.id);
-    await reminders.handle(rem.id); // pemrosesan ganda
+    const rem = await prisma.reminder.findFirstOrThrow({ where: { requestId: reqId, kind: "PASSED" } });
+    await reminders.applyReminder(rem.id);
+    await reminders.applyReminder(rem.id); // pemrosesan ganda
     expect((await notes()).filter((t) => t === "REMINDER_PASSED")).toHaveLength(1);
-    expect((await u.q(`{unreadCount}`)).data.unreadCount).toBeGreaterThanOrEqual(3);
+    expect((await u.q(`{unreadCount}`)).data.unreadCount).toBeGreaterThanOrEqual(2);
+    expect((await prisma.privacyRequest.findUniqueOrThrow({ where: { id: reqId } })).status).toBe("OVERDUE");
     await reminders.runOnce(); // tidak ada antrean ulang untuk yang sudah fired
     expect((await notes()).filter((t) => t === "REMINDER_PASSED")).toHaveLength(1);
   });
@@ -177,7 +183,7 @@ describe("alur inti pengguna", () => {
     await u.q(`mutation($i:String!){reviewRequest(id:$i){id}}`, { i: id });
     const r = await u.q(`mutation($i:String!){recordRequestSent(id:$i,sentVia:"FORM"){${REQ}}}`, { i: id });
     expect(r.data.recordRequestSent.deadline).toMatchObject({ status: "RULE_NOT_VERIFIED", dueAt: null, ruleStatus: "NOT_VERIFIED" });
-    const kinds = (await prisma.scheduledReminder.findMany({ where: { requestId: id } })).map((x) => x.kind);
+    const kinds = (await prisma.reminder.findMany({ where: { requestId: id } })).map((x) => x.kind);
     expect(kinds).toEqual(["FOLLOW_UP"]);
   });
 });
@@ -192,7 +198,7 @@ describe("keamanan & otorisasi", () => {
     expect(
       (
         await u.q(
-          `mutation{publishLegalRule(input:{rightCode:"ACCESS",legalBasis:"x",status:"VERIFIED",durationHours:1,effectiveFrom:"2026-01-01T00:00:00Z",verifiedBy:"x"}){id}}`,
+          `mutation{publishLegalRule(input:{rightCode:"ACCESS",legalBasis:"x",status:"VERIFIED",durationHours:1,effectiveFrom:"2026-01-01T00:00:00Z",verifiedBy:"x",sourceRef:"x"}){id}}`,
         )
       ).errors![0].extensions.code,
     ).toBe("FORBIDDEN");
@@ -244,7 +250,7 @@ describe("keamanan & otorisasi", () => {
 });
 
 describe("moderasi, aturan hukum berversi, hapus akun", () => {
-  it("usulan kanal -> moderator setujui -> COMMUNITY_REPORTED; spam/tanpa sumber ditolak", async () => {
+  it("usulan kanal -> admin setujui -> COMMUNITY_VERIFIED; spam/tanpa sumber ditolak", async () => {
     const u = await signup();
     const co = (await u.q(`{companies(search:"seluler"){items{id slug}}}`)).data.companies.items[0];
     expect(
@@ -270,16 +276,16 @@ describe("moderasi, aturan hukum berversi, hapus akun", () => {
     );
     expect(s.data.submitChannel.status).toBe("PENDING");
     const mod = await login("moderator@hakdata.demo");
-    await mod.q(`mutation($i:String!){reviewSubmission(id:$i,approve:true){status}}`, { i: s.data.submitChannel.id });
+    const admin = await login("admin@hakdata.demo");
+    await admin.q(`mutation($i:String!){reviewSubmission(id:$i,approve:true){status}}`, { i: s.data.submitChannel.id });
     const ch = (await u.q(`query($s:String!){company(slug:$s){channels{value status}}}`, { s: co.slug })).data.company.channels.find(
       (c: any) => c.value === value,
     );
-    expect(ch.status).toBe("COMMUNITY_REPORTED");
-    const admin = await login("admin@hakdata.demo"); // moderator tidak boleh menandai VERIFIED
+    expect(ch.status).toBe("COMMUNITY_VERIFIED");
     expect(
       (
         await mod.q(
-          `mutation($c:String!,$v:String!){upsertChannel(input:{companyId:$c,type:"PRIVACY_EMAIL",value:$v,status:"VERIFIED",sourceUrl:"https://x.example"}){id}}`,
+          `mutation($c:String!,$v:String!){upsertChannel(input:{companyId:$c,type:"PRIVACY_EMAIL",value:$v,status:"OFFICIAL",sourceUrl:"https://x.example"}){id}}`,
           { c: co.id, v: value },
         )
       ).errors![0].extensions.code,
@@ -287,11 +293,11 @@ describe("moderasi, aturan hukum berversi, hapus akun", () => {
     expect(
       (
         await admin.q(
-          `mutation($c:String!,$v:String!){upsertChannel(input:{companyId:$c,type:"PRIVACY_EMAIL",value:$v,status:"VERIFIED",sourceUrl:"https://x.example"}){status}}`,
+          `mutation($c:String!,$v:String!){upsertChannel(input:{companyId:$c,type:"PRIVACY_EMAIL",value:$v,status:"OFFICIAL",sourceUrl:"https://x.example"}){status}}`,
           { c: co.id, v: value },
         )
       ).data.upsertChannel.status,
-    ).toBe("VERIFIED");
+    ).toBe("OFFICIAL");
   });
   it("aturan versi baru: permintaan lama tetap v1, baru memakai v2; tercatat di audit log", async () => {
     const admin = await login("admin@hakdata.demo");
@@ -311,14 +317,14 @@ describe("moderasi, aturan hukum berversi, hapus akun", () => {
     };
     const baseline = (h: number) =>
       admin.q(
-        `mutation($e:DateTime!,$h:Int!){publishLegalRule(input:{rightCode:"CORRECTION",legalBasis:"UU 27/2022 Pasal 30 ayat (1)",status:"VERIFIED",durationHours:$h,effectiveFrom:$e,verifiedBy:"uji"}){version}}`,
+        `mutation($e:DateTime!,$h:Int!){publishLegalRule(input:{rightCode:"CORRECTION",legalBasis:"UU 27/2022 Pasal 30 ayat (1)",status:"VERIFIED",durationHours:$h,effectiveFrom:$e,verifiedBy:"uji",sourceRef:"uji"}){version}}`,
         { e: new Date(Date.now() - 2000).toISOString(), h },
       );
     await baseline(72); // keadaan awal deterministik
     const before = await run();
     const eff = new Date(Date.now() - 1000).toISOString();
     const p = await admin.q(
-      `mutation($e:DateTime!){publishLegalRule(input:{rightCode:"CORRECTION",legalBasis:"UU 27/2022 Pasal 30 (uji)",status:"VERIFIED",durationHours:48,effectiveFrom:$e,verifiedBy:"uji"}){version}}`,
+      `mutation($e:DateTime!){publishLegalRule(input:{rightCode:"CORRECTION",legalBasis:"UU 27/2022 Pasal 30 (uji)",status:"VERIFIED",durationHours:48,effectiveFrom:$e,verifiedBy:"uji",sourceRef:"uji"}){version}}`,
       { e: eff },
     );
     expect(p.data.publishLegalRule.version).toBe(before + 1);
@@ -336,9 +342,15 @@ describe("moderasi, aturan hukum berversi, hapus akun", () => {
   it("hapus akun menganonimkan data dan mencabut sesi", async () => {
     const u = await signup();
     const co = (await u.q(`{companies(search:"toko"){items{id}}}`)).data.companies.items[0].id;
-    await u.q(`mutation($c:String!){createRequest(companyId:$c,rightCode:"ACCESS"){id}}`, { c: co });
+    const rq = (await u.q(`mutation($c:String!){createRequest(companyId:$c,rightCode:"ACCESS"){id}}`, { c: co })).data.createRequest.id;
+    await u.q(`mutation($i:String!){addTimelineNote(id:$i,text:"NIK saya 3171xxxxxxxx"){id}}`, { i: rq });
     expect((await u.q(`{myDataExport{data}}`)).data.myDataExport.data.requests).toHaveLength(1);
+    const email = (await prisma.user.findUniqueOrThrow({ where: { id: u.id } })).email;
     expect((await u.q(`mutation{deleteMyAccount}`)).data.deleteMyAccount).toBe(true);
+    // teks bebas di linimasa append-only tidak bisa dianonimkan di tempat: permintaan beserta linimasanya dihapus permanen
+    expect(await prisma.privacyRequest.count({ where: { userId: u.id } })).toBe(0);
+    expect(await prisma.timelineEvent.count({ where: { requestId: rq } })).toBe(0);
+    expect(await prisma.emailDelivery.count({ where: { toAddress: email } })).toBe(0);
     const row = await prisma.user.findUniqueOrThrow({ where: { id: u.id } });
     expect(row.email).toMatch(/invalid$/);
     expect(row.deletedAt).not.toBeNull();
