@@ -25,6 +25,10 @@ jobs:
         ports: ["5673:5672"]
         options: >-
           --health-cmd "rabbitmq-diagnostics -q ping" --health-interval 10s --health-retries 10
+      # auth.int.ts dan phase6.int.ts membaca email yang benar-benar terkirim lewat API Mailpit
+      mailpit:
+        image: axllent/mailpit:v1.21
+        ports: ["1025:1025", "8025:8025"]
     env:
       DATABASE_URL: postgresql://hakdata:hakdata_dev@localhost:5433/hakdata
       RABBITMQ_URL: amqp://hakdata:hakdata_dev@localhost:5673

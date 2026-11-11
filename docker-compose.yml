@@ -1,22 +1,72 @@
 # Copyright (c) 2026 Vassel Goleyu. All rights reserved.
-# Dev only: kredensial di bawah BUKAN untuk produksi.
+# Demo lokal satu perintah: `docker compose up --build` -> http://localhost:3000 (Mailpit http://localhost:8025).
+# Dev tanpa container aplikasi: `docker compose up -d postgres rabbitmq mailpit` lalu `pnpm dev`.
+# Kredensial di bawah hanya untuk demo/dev, BUKAN produksi. Semua port hanya terbuka di 127.0.0.1.
+x-app: &app
+  build: { context: ., args: { NPM_REGISTRY: "${NPM_REGISTRY:-https://registry.npmjs.org/}" } }
+  image: hakdata-app:local
+  environment: &app-env
+    NODE_ENV: development # cookie tanpa flag Secure agar login jalan di http://localhost
+    DATABASE_URL: postgresql://hakdata:hakdata_dev@postgres:5432/hakdata
+    RABBITMQ_URL: amqp://hakdata:hakdata_dev@rabbitmq:5672
+    JWT_SECRET: demo-only-jwt-secret-ganti-di-produksi-0123456789
+    UPLOAD_DIR: /data/evidence
+    API_PORT: "4000"
+    WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
+    MAIL_HOST: mailpit
+    MAIL_PORT: "1025"
+    MAIL_FROM: no-reply@hakdata.example
+    # Mode demo: perusahaan simulasi membalas; 8640x = 72 jam tenggat menjadi 30 detik (docs/DEMO_SCRIPT.md)
+    DEMO_MODE: "true"
+    # nama berbeda dari DEADLINE_TIME_SCALE di .env (=1 untuk dev) agar demo tetap dipercepat walau .env ada
+    DEADLINE_TIME_SCALE: "${DEMO_TIME_SCALE:-8640}"
+    # Tepat satu hop proxy dipercaya (Next -> API). Port API hanya di loopback, jadi X-Forwarded-For tidak bisa dipalsukan dari luar.
+    TRUST_PROXY: "1"
+
 services:
   postgres:
     image: postgres:16-alpine
     environment: { POSTGRES_USER: hakdata, POSTGRES_PASSWORD: hakdata_dev, POSTGRES_DB: hakdata }
-    ports: ["5433:5432"]
+    ports: ["127.0.0.1:${PG_PORT:-5433}:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U hakdata"], interval: 5s, retries: 10 }
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     environment: { RABBITMQ_DEFAULT_USER: hakdata, RABBITMQ_DEFAULT_PASS: hakdata_dev }
-    ports: ["5673:5672", "15673:15672"] # AMQP, management UI http://localhost:15673
+    ports: ["127.0.0.1:${AMQP_PORT:-5673}:5672", "127.0.0.1:${RABBIT_UI_PORT:-15673}:15672"] # UI http://localhost:15673
     volumes: [rabbitdata:/var/lib/rabbitmq]
     healthcheck: { test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"], interval: 10s, retries: 10 }
   mailpit:
     image: axllent/mailpit:v1.21
-    ports: ["1025:1025", "8025:8025"] # SMTP tangkap-semua, UI http://localhost:8025
+    ports: ["127.0.0.1:${SMTP_PORT:-1025}:1025", "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"] # UI http://localhost:8025
     volumes: [mailpitdata:/data]
     environment: { MP_DATABASE: /data/mailpit.db }
     healthcheck: { test: ["CMD", "/mailpit", "readyz"], interval: 10s, retries: 10 }
-volumes: { pgdata: {}, rabbitdata: {}, mailpitdata: {} }
+
+  # Sekali jalan: migrasi + seed idempoten (perusahaan DEMO fiktif, akun demo). api menunggu ini selesai.
+  migrate:
+    <<: *app
+    working_dir: /app/apps/api
+    command: ["sh", "-c", "pnpm exec prisma migrate deploy && pnpm exec ts-node prisma/seed.ts"]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: "no"
+  api:
+    <<: *app
+    working_dir: /app/apps/api
+    command: ["node", "dist/main"]
+    ports: ["127.0.0.1:${API_PORT:-4000}:4000"] # /health dan GraphQL langsung; browser memakai proxy /api di web
+    volumes: [evidence:/data/evidence]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      rabbitmq: { condition: service_healthy }
+      mailpit: { condition: service_healthy }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/health"], interval: 5s, retries: 20 }
+  web:
+    <<: *app
+    working_dir: /app/apps/web
+    environment: { NODE_ENV: production, NEXT_TELEMETRY_DISABLED: "1" }
+    command: ["node", "node_modules/next/dist/bin/next", "start", "-p", "3000"]
+    ports: ["127.0.0.1:${WEB_PORT:-3000}:3000"]
+    depends_on: { api: { condition: service_healthy } }
+
+volumes: { pgdata: {}, rabbitdata: {}, mailpitdata: {}, evidence: {} }

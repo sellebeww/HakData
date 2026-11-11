@@ -1,0 +1,14 @@
+**/node_modules
+**/.next
+**/.next-e2e
+**/dist
+**/storage
+**/test-results
+**/playwright-report
+**/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.git
+.husky
+.DS_Store
