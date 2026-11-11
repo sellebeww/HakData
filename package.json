@@ -1,0 +1,26 @@
+{
+  "name": "hak-data",
+  "private": true,
+  "author": "Vassel Goleyu",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/web",
+    "lint": "npm run lint -w apps/web",
+    "typecheck": "npm run typecheck -w apps/web",
+    "test": "npm test -w @hakdata/api",
+    "test:int": "npm run test:int -w @hakdata/api",
+    "e2e": "npm exec -w @hakdata/web playwright test",
+    "db:migrate": "npm run db:push -w @hakdata/api",
+    "db:seed": "npm run db:seed -w @hakdata/api"
+  },
+  "overrides": {
+    "graphql": "16.9.0"
+  },
+  "dependencies": {
+    "graphql": "16.9.0"
+  }
+}

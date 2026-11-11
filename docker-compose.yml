@@ -1,0 +1,15 @@
+# Copyright (c) 2026 Vassel Goleyu. All rights reserved.
+# Dev only: kredensial di bawah BUKAN untuk produksi.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: hakdata, POSTGRES_PASSWORD: hakdata_dev, POSTGRES_DB: hakdata }
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U hakdata"], interval: 5s, retries: 10 }
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment: { RABBITMQ_DEFAULT_USER: hakdata, RABBITMQ_DEFAULT_PASS: hakdata_dev }
+    ports: ["5673:5672", "15673:15672"]
+    healthcheck: { test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"], interval: 10s, retries: 10 }
+volumes: { pgdata: {} }

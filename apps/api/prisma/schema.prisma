@@ -1,0 +1,319 @@
+// Copyright (c) 2026 Vassel Goleyu. All rights reserved.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  MODERATOR
+  ADMIN
+}
+
+enum VerificationStatus {
+  VERIFIED
+  COMMUNITY_REPORTED
+  UNVERIFIED
+  OUTDATED
+}
+
+enum ChannelType {
+  PRIVACY_EMAIL
+  DPO_EMAIL
+  REQUEST_FORM
+  POSTAL_ADDRESS
+  PRIVACY_POLICY_URL
+}
+
+enum RuleStatus {
+  VERIFIED
+  NEEDS_CONFIRMATION
+  NOT_VERIFIED
+}
+
+enum RequestStatus {
+  DRAFT
+  REVIEWED
+  SENT
+  RESPONDED
+  COMPLETED
+  CLOSED
+}
+
+enum EvidenceSource {
+  USER_UPLOADED
+  SYSTEM_RECORDED
+  VERIFIED
+  DISPUTED
+}
+
+enum ResponseCategory {
+  ACKNOWLEDGED
+  ADDITIONAL_INFO_REQUESTED
+  IN_PROGRESS
+  FULFILLED
+  PARTIALLY_FULFILLED
+  REJECTED
+  NO_RESPONSE
+  OTHER
+}
+
+enum ReminderKind {
+  APPROACHING
+  PASSED
+  FOLLOW_UP
+}
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id            String              @id @default(cuid())
+  email         String              @unique
+  passwordHash  String
+  name          String
+  role          Role                @default(USER)
+  deletedAt     DateTime?
+  createdAt     DateTime            @default(now())
+  requests      PrivacyRequest[]
+  notifications Notification[]
+  submissions   ChannelSubmission[]
+}
+
+model Company {
+  id          String              @id @default(cuid())
+  slug        String              @unique
+  name        String
+  brand       String?
+  legalName   String?
+  industry    String
+  website     String?
+  isDemo      Boolean             @default(false)
+  notes       String?
+  createdAt   DateTime            @default(now())
+  channels    PrivacyChannel[]
+  requests    PrivacyRequest[]
+  submissions ChannelSubmission[]
+
+  @@index([industry])
+}
+
+model PrivacyChannel {
+  id            String             @id @default(cuid())
+  companyId     String
+  company       Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type          ChannelType
+  value         String
+  status        VerificationStatus @default(UNVERIFIED)
+  sourceUrl     String?
+  lastCheckedAt DateTime?
+  note          String?
+  requests      PrivacyRequest[]
+
+  @@unique([companyId, type, value])
+}
+
+model ChannelSubmission {
+  id         String           @id @default(cuid())
+  companyId  String
+  company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User             @relation(fields: [userId], references: [id])
+  type       ChannelType
+  value      String
+  sourceUrl  String
+  status     SubmissionStatus @default(PENDING)
+  reviewNote String?
+  createdAt  DateTime         @default(now())
+
+  @@index([status])
+}
+
+model DataRight {
+  code                    String            @id
+  article                 String
+  title                   String
+  plainMeaning            String
+  needs                   String[]
+  requiresRecordedRequest Boolean           @default(true)
+  sortOrder               Int
+  templates               RequestTemplate[]
+  rules                   LegalRule[]
+}
+
+model LegalRule {
+  id             String     @id @default(cuid())
+  ruleKey        String
+  version        Int
+  rightCode      String
+  right          DataRight  @relation(fields: [rightCode], references: [code])
+  legalBasis     String
+  triggerEvent   String     @default("REQUEST_RECEIVED")
+  durationHours  Int?
+  calcMethod     String     @default("CALENDAR_HOURS")
+  applicability  String?
+  exceptions     String?
+  status         RuleStatus
+  verifiedBy     String?
+  lastReviewedAt DateTime?
+  effectiveFrom  DateTime
+  supersededAt   DateTime?
+  deadlines      Deadline[]
+
+  @@unique([ruleKey, version])
+  @@index([rightCode, effectiveFrom])
+}
+
+model RequestTemplate {
+  id        String    @id @default(cuid())
+  rightCode String
+  right     DataRight @relation(fields: [rightCode], references: [code])
+  version   Int
+  body      String
+  active    Boolean   @default(true)
+
+  @@unique([rightCode, version])
+}
+
+model PrivacyRequest {
+  id              String              @id @default(cuid())
+  userId          String
+  user            User                @relation(fields: [userId], references: [id])
+  companyId       String
+  company         Company             @relation(fields: [companyId], references: [id])
+  rightCode       String
+  channelId       String?
+  channel         PrivacyChannel?     @relation(fields: [channelId], references: [id])
+  status          RequestStatus       @default(DRAFT)
+  title           String
+  fields          Json
+  letterBody      String              @default("")
+  templateVersion Int?
+  sentAt          DateTime?
+  sentVia         String?
+  receivedAt      DateTime?
+  followUpDays    Int                 @default(14)
+  deletedAt       DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  deadline        Deadline?
+  events          TimelineEvent[]
+  evidence        Evidence[]
+  responses       CompanyResponse[]
+  reminders       ScheduledReminder[]
+
+  @@index([userId, status])
+  @@index([companyId, rightCode])
+}
+
+model Deadline {
+  id          String         @id @default(cuid())
+  requestId   String         @unique
+  request     PrivacyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  ruleId      String
+  rule        LegalRule      @relation(fields: [ruleId], references: [id])
+  startedAt   DateTime
+  dueAt       DateTime?
+  timezone    String
+  basisNote   String
+  completedAt DateTime?
+}
+
+model TimelineEvent {
+  id           String         @id @default(cuid())
+  requestId    String
+  request      PrivacyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  type         String
+  actor        String
+  description  String
+  occurredAt   DateTime       @default(now())
+  metadata     Json?
+  verification EvidenceSource @default(SYSTEM_RECORDED)
+  evidenceId   String?
+
+  @@index([requestId, occurredAt])
+}
+
+model Evidence {
+  id           String         @id @default(cuid())
+  requestId    String
+  request      PrivacyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  storageKey   String         @unique
+  originalName String
+  mime         String
+  size         Int
+  sha256       String
+  source       EvidenceSource @default(USER_UPLOADED)
+  createdAt    DateTime       @default(now())
+}
+
+model CompanyResponse {
+  id         String           @id @default(cuid())
+  requestId  String
+  request    PrivacyRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  category   ResponseCategory
+  note       String?
+  receivedAt DateTime
+  evidenceId String?
+  createdAt  DateTime         @default(now())
+
+  @@index([requestId])
+}
+
+model ScheduledReminder {
+  id        String         @id @default(cuid())
+  requestId String
+  request   PrivacyRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  kind      ReminderKind
+  fireAt    DateTime
+  queuedAt  DateTime?
+  firedAt   DateTime?
+
+  @@unique([requestId, kind])
+  @@index([fireAt, firedAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestId String?
+  type      String
+  title     String
+  body      String
+  dedupeKey String    @unique
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+model OutboxEvent {
+  id          String    @id @default(cuid())
+  type        String
+  payload     Json
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+  attempts    Int       @default(0)
+
+  @@index([publishedAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+}
