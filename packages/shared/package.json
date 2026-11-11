@@ -1,0 +1,20 @@
+{
+  "name": "@hakdata/shared",
+  "private": true,
+  "author": "Vassel Goleyu",
+  "license": "UNLICENSED",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3"
+  }
+}

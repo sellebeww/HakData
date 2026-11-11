@@ -3,24 +3,50 @@
   "private": true,
   "author": "Vassel Goleyu",
   "license": "UNLICENSED",
-  "workspaces": [
-    "apps/*"
-  ],
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "npm run dev -w apps/web",
-    "build": "npm run build -w apps/web",
-    "lint": "npm run lint -w apps/web",
-    "typecheck": "npm run typecheck -w apps/web",
-    "test": "npm test -w @hakdata/api",
-    "test:int": "npm run test:int -w @hakdata/api",
-    "e2e": "npm exec -w @hakdata/web playwright test",
-    "db:migrate": "npm run db:push -w @hakdata/api",
-    "db:seed": "npm run db:seed -w @hakdata/api"
+    "prepare": "husky",
+    "build:shared": "pnpm --filter @hakdata/shared build",
+    "dev": "pnpm build:shared && pnpm --parallel --filter @hakdata/api --filter @hakdata/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm build:shared && pnpm -r lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm build:shared && pnpm -r typecheck",
+    "test": "pnpm build:shared && pnpm --filter @hakdata/api test",
+    "test:int": "pnpm build:shared && pnpm --filter @hakdata/api test:int",
+    "e2e": "pnpm --filter @hakdata/web exec playwright test",
+    "db:migrate": "pnpm --filter @hakdata/api db:push",
+    "db:seed": "pnpm --filter @hakdata/api db:seed",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
-  "overrides": {
-    "graphql": "16.9.0"
+  "pnpm": {
+    "overrides": {
+      "graphql": "16.9.0"
+    },
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild",
+      "@nestjs/core",
+      "sharp",
+      "unrs-resolver"
+    ]
   },
-  "dependencies": {
-    "graphql": "16.9.0"
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.0",
+    "@commitlint/config-conventional": "^19.8.0",
+    "@eslint/js": "^9.20.0",
+    "eslint": "^9.20.0",
+    "eslint-config-prettier": "^10.0.1",
+    "globals": "^15.14.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.3",
+    "prettier": "^3.4.2",
+    "typescript-eslint": "^8.23.0"
   }
 }

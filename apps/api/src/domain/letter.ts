@@ -1,7 +1,11 @@
 // Copyright (c) 2026 Vassel Goleyu. All rights reserved.
 import { FieldDef } from "./rights.catalog";
 
-export class LetterValidationError extends Error { constructor(public missing: string[]) { super(`Kolom wajib belum diisi: ${missing.join(", ")}`); } }
+export class LetterValidationError extends Error {
+  constructor(public missing: string[]) {
+    super(`Kolom wajib belum diisi: ${missing.join(", ")}`);
+  }
+}
 
 export function validateFields(defs: FieldDef[], values: Record<string, string>) {
   const missing = defs.filter((d) => d.required && !String(values[d.key] ?? "").trim()).map((d) => d.label);

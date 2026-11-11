@@ -10,6 +10,13 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     environment: { RABBITMQ_DEFAULT_USER: hakdata, RABBITMQ_DEFAULT_PASS: hakdata_dev }
-    ports: ["5673:5672", "15673:15672"]
+    ports: ["5673:5672", "15673:15672"] # AMQP, management UI http://localhost:15673
+    volumes: [rabbitdata:/var/lib/rabbitmq]
     healthcheck: { test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"], interval: 10s, retries: 10 }
-volumes: { pgdata: {} }
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports: ["1025:1025", "8025:8025"] # SMTP tangkap-semua, UI http://localhost:8025
+    volumes: [mailpitdata:/data]
+    environment: { MP_DATABASE: /data/mailpit.db }
+    healthcheck: { test: ["CMD", "/mailpit", "readyz"], interval: 10s, retries: 10 }
+volumes: { pgdata: {}, rabbitdata: {}, mailpitdata: {} }

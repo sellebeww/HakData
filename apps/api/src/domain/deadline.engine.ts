@@ -1,13 +1,18 @@
 // Copyright (c) 2026 Vassel Goleyu. All rights reserved.
 export type RuleStatus = "VERIFIED" | "NEEDS_CONFIRMATION" | "NOT_VERIFIED";
 export type DeadlineStatus =
-  | "COUNTDOWN_ACTIVE" | "APPROACHING_DEADLINE" | "DEADLINE_PASSED"
-  | "NEEDS_CONFIRMATION" | "RULE_NOT_VERIFIED" | "COMPLETED";
+  "COUNTDOWN_ACTIVE" | "APPROACHING_DEADLINE" | "DEADLINE_PASSED" | "NEEDS_CONFIRMATION" | "RULE_NOT_VERIFIED" | "COMPLETED";
 
 export interface RuleLike {
-  id: string; ruleKey: string; version: number; rightCode: string;
-  durationHours: number | null; calcMethod: string; status: RuleStatus;
-  effectiveFrom: Date; supersededAt: Date | null;
+  id: string;
+  ruleKey: string;
+  version: number;
+  rightCode: string;
+  durationHours: number | null;
+  calcMethod: string;
+  status: RuleStatus;
+  effectiveFrom: Date;
+  supersededAt: Date | null;
 }
 
 const HOUR = 3_600_000;
@@ -27,9 +32,7 @@ export function computeDueAt(rule: Pick<RuleLike, "durationHours" | "calcMethod"
   return new Date(startedAt.getTime() + rule.durationHours * HOUR);
 }
 
-export function deadlineStatus(
-  d: { dueAt: Date | null; completedAt: Date | null; ruleStatus: RuleStatus }, now: Date,
-): DeadlineStatus {
+export function deadlineStatus(d: { dueAt: Date | null; completedAt: Date | null; ruleStatus: RuleStatus }, now: Date): DeadlineStatus {
   if (d.completedAt) return "COMPLETED";
   if (d.dueAt == null || d.ruleStatus === "NOT_VERIFIED") return "RULE_NOT_VERIFIED";
   if (d.ruleStatus === "NEEDS_CONFIRMATION") return "NEEDS_CONFIRMATION";

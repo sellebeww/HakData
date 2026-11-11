@@ -29,14 +29,14 @@ Next.js 15 + React 19 + TypeScript · NestJS 10 + GraphQL (code-first, Apollo) �
 
 ## Menjalankan
 ```bash
-npm install
-cp .env.example apps/api/.env      # ganti JWT_SECRET (>= 32 karakter)
-docker compose up -d               # Postgres :5433, RabbitMQ :5673
-npm run db:migrate && npm run db:seed
-npm run dev -w @hakdata/api        # API :4000  (atau: npm -w @hakdata/api run build && npm -w @hakdata/api start)
-npm run dev -w @hakdata/web        # Web :3000, proxy /api -> :4000
+pnpm install                       # Node >= 22, pnpm 10 (corepack enable)
+cp .env.example .env               # root repo; ganti JWT_SECRET (>= 32 karakter)
+docker compose up -d               # Postgres :5433, RabbitMQ :5673 (UI :15673), Mailpit SMTP :1025 (UI :8025)
+pnpm db:migrate && pnpm db:seed
+pnpm dev                           # API :4000 + Web :3000 (proxy /api -> :4000)
+curl localhost:4000/health         # {"status":"ok","checks":{"db":"up","rabbitmq":"up"}}; 503 bila salah satu mati
 ```
-Variabel lingkungan: lihat [.env.example](.env.example) (DATABASE_URL, RABBITMQ_URL, JWT_SECRET, UPLOAD_DIR, WEB_ORIGIN, API_URL untuk web).
+Variabel lingkungan: lihat [.env.example](.env.example); API memvalidasinya saat boot dan berhenti dengan pesan jelas bila salah. Struktur: `apps/api`, `apps/web`, `packages/shared`.
 
 ## Akun demo (hanya dev, dibuat oleh seed)
 Kata sandi semua akun: `DemoPass!2026` — `admin@hakdata.demo` (ADMIN), `moderator@hakdata.demo` (MODERATOR), `user@hakdata.demo` (USER). **Jangan dipakai di produksi.**
@@ -44,11 +44,12 @@ Semua perusahaan di seed adalah **DEMO fiktif** (domain `.example`). Tidak ada d
 
 ## Pengujian
 ```bash
-npm test                # 13 unit test (deadline engine, state machine, surat)
-npm run test:int        # 17 integration test: Postgres + RabbitMQ + GraphQL + upload + keamanan
-npm run e2e             # 5 Playwright E2E (butuh API & web berjalan)
-npm run typecheck && npm run lint && npm run build
+pnpm test               # 15 unit test (deadline engine, state machine, surat, validasi env)
+pnpm test:int           # 17 integration test: Postgres + RabbitMQ + GraphQL + upload + keamanan
+pnpm e2e                # 5 Playwright E2E (butuh API & web berjalan)
+pnpm check              # format, lint, typecheck, test, build (sama dengan CI, tanpa integration test)
 ```
+Commit memakai Conventional Commits (commitlint) dan pre-commit lint-staged lewat husky.
 Lihat [docs/testing-strategy.md](docs/testing-strategy.md) untuk hasil dan cakupan.
 
 ## Dokumentasi

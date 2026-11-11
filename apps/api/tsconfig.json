@@ -1,2 +1,21 @@
-{ "compilerOptions": { "module": "commonjs", "target": "ES2022", "declaration": false, "removeComments": true, "emitDecoratorMetadata": true, "experimentalDecorators": true, "allowSyntheticDefaultImports": true, "esModuleInterop": true, "sourceMap": true, "outDir": "./dist", "baseUrl": "./", "incremental": true, "skipLibCheck": true, "strict": true, "strictPropertyInitialization": false, "resolveJsonModule": true },
-  "include": ["src", "prisma", "test"] }
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2022",
+    "declaration": false,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "strictPropertyInitialization": false,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "prisma", "test"]
+}

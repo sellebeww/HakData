@@ -5,14 +5,18 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { config } from "./common/config";
+import { validateEnv } from "./env";
 
 export async function createApp() {
-  config.jwtSecret; // gagal cepat bila secret tidak ada
+  validateEnv(); // gagal cepat bila konfigurasi salah
   const app = await NestFactory.create(AppModule, { logger: ["error", "warn", "log"] });
   app.use(helmet({ crossOriginResourcePolicy: { policy: "same-site" } }), cookieParser());
   app.enableCors({ origin: config.webOrigin, credentials: true });
   return app;
 }
 if (require.main === module) {
-  createApp().then(async (app) => { app.enableShutdownHooks(); await app.listen(Number(process.env.API_PORT ?? 4000)); });
+  createApp().then(async (app) => {
+    app.enableShutdownHooks();
+    await app.listen(validateEnv().API_PORT);
+  });
 }

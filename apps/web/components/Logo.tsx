@@ -25,7 +25,9 @@ export function Wordmark() {
   return (
     <span className="wordmark">
       <LogoMark size={34} />
-      <span>Hak<b>Data</b></span>
+      <span>
+        Hak<b>Data</b>
+      </span>
     </span>
   );
 }

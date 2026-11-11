@@ -5,8 +5,18 @@ import { renderLetter, validateFields, LetterValidationError } from "./letter";
 import { RIGHTS } from "./rights.catalog";
 
 const d = (s: string) => new Date(s);
-const rule = (o: Partial<RuleLike> = {}): RuleLike => ({ id: "r1", ruleKey: "ACCESS", version: 1, rightCode: "ACCESS", durationHours: 72,
-  calcMethod: "CALENDAR_HOURS", status: "VERIFIED", effectiveFrom: d("2022-10-17"), supersededAt: null, ...o });
+const rule = (o: Partial<RuleLike> = {}): RuleLike => ({
+  id: "r1",
+  ruleKey: "ACCESS",
+  version: 1,
+  rightCode: "ACCESS",
+  durationHours: 72,
+  calcMethod: "CALENDAR_HOURS",
+  status: "VERIFIED",
+  effectiveFrom: d("2022-10-17"),
+  supersededAt: null,
+  ...o,
+});
 
 describe("deadline engine", () => {
   it("menambah 72 jam kalender", () => expect(computeDueAt(rule(), d("2026-11-11T10:00:00Z"))).toEqual(d("2026-11-14T10:00:00Z")));
@@ -21,7 +31,8 @@ describe("deadline engine", () => {
     expect(selectRule([v1, v2], "DELETE", d("2027-02-01"))).toBeUndefined();
   });
   it("status tenggat", () => {
-    const due = d("2026-11-14T10:00:00Z"); const base = { dueAt: due, completedAt: null, ruleStatus: "VERIFIED" as const };
+    const due = d("2026-11-14T10:00:00Z");
+    const base = { dueAt: due, completedAt: null, ruleStatus: "VERIFIED" as const };
     expect(deadlineStatus(base, d("2026-11-11T10:00:00Z"))).toBe("COUNTDOWN_ACTIVE");
     expect(deadlineStatus(base, d("2026-11-13T12:00:00Z"))).toBe("APPROACHING_DEADLINE");
     expect(deadlineStatus(base, d("2026-11-14T10:00:00Z"))).toBe("DEADLINE_PASSED");
@@ -31,14 +42,26 @@ describe("deadline engine", () => {
   });
   it("jadwal pengingat: verified punya 3, tanpa tenggat hanya follow-up", () => {
     const sent = d("2026-11-11T10:00:00Z");
-    expect(planReminders(sent, d("2026-11-14T10:00:00Z"), 14).map((p) => p.kind).sort()).toEqual(["APPROACHING", "FOLLOW_UP", "PASSED"]);
+    expect(
+      planReminders(sent, d("2026-11-14T10:00:00Z"), 14)
+        .map((p) => p.kind)
+        .sort(),
+    ).toEqual(["APPROACHING", "FOLLOW_UP", "PASSED"]);
     expect(planReminders(sent, null, 7)).toEqual([{ kind: "FOLLOW_UP", fireAt: d("2026-11-18T10:00:00Z") }]);
   });
 });
 
 describe("state machine", () => {
-  it("alur normal", () => { ["DRAFT>REVIEWED", "REVIEWED>SENT", "SENT>RESPONDED", "RESPONDED>COMPLETED", "COMPLETED>CLOSED"].forEach((p) => { const [a, b] = p.split(">"); expect(canTransition(a as never, b as never)).toBe(true); }); });
-  it("menolak lompatan", () => { expect(canTransition("DRAFT", "SENT")).toBe(false); expect(() => assertTransition("CLOSED", "DRAFT")).toThrow(); });
+  it("alur normal", () => {
+    ["DRAFT>REVIEWED", "REVIEWED>SENT", "SENT>RESPONDED", "RESPONDED>COMPLETED", "COMPLETED>CLOSED"].forEach((p) => {
+      const [a, b] = p.split(">");
+      expect(canTransition(a as never, b as never)).toBe(true);
+    });
+  });
+  it("menolak lompatan", () => {
+    expect(canTransition("DRAFT", "SENT")).toBe(false);
+    expect(() => assertTransition("CLOSED", "DRAFT")).toThrow();
+  });
 });
 
 describe("generator surat", () => {
@@ -51,7 +74,8 @@ describe("generator surat", () => {
       expect(out).toMatch(/UU No\. 27 Tahun 2022|Undang-Undang Nomor 27 Tahun 2022/);
     }
   });
-  it("tidak ada bahasa mengancam", () => RIGHTS.forEach((r) => expect(r.templateBody.toLowerCase()).not.toMatch(/gugat|somasi|pidana|ancam/)));
+  it("tidak ada bahasa mengancam", () =>
+    RIGHTS.forEach((r) => expect(r.templateBody.toLowerCase()).not.toMatch(/gugat|somasi|pidana|ancam/)));
   it("validasi kolom wajib", () => expect(() => validateFields(RIGHTS[0].fields, { fullName: "A" })).toThrow(LetterValidationError));
   it("placeholder tak dikenal gagal", () => expect(() => renderLetter("{{x}}", {})).toThrow());
 });
